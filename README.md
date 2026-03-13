@@ -24,7 +24,7 @@
 快速探索特定的个股在不同参数下的拟合效果：
 ```bash
 # bash scripts/run_single_stock_eval.sh <股票代码> [train_days] [horizon] [feature_set] [test_days]
-bash scripts/run_single_stock_eval.sh 002594 60 1 full 20
+bash scripts/run_single_stock_eval.sh 002074 60 1 full 20
 ```
 
 ### 2. 批量组别回测跑批 (Group Evaluation)

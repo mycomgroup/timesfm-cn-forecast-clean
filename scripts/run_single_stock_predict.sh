@@ -32,13 +32,12 @@ export PYTHONPATH=src
 
 echo "=== Running Single Stock Prediction for ${SYMBOL} ==="
 python -m timesfm_cn_forecast.cli \
-  --provider "duckdb" \
+  --provider "akshare" \
   --symbol "${SYMBOL}" \
   --adapter "${ADAPTER}" \
-  --duckdb-path "${MARKET_DUCKDB}" \
-  --index-duckdb "${INDEX_DUCKDB}" \
   --horizon "${HORIZON}" \
   --context-length "${CONTEXT_LEN}" \
-  --output-dir "${OUTPUT_DIR}"
+  --output-dir "${OUTPUT_DIR}" \
+  --kline
 
 echo "Prediction complete. Check ${OUTPUT_DIR} for results."

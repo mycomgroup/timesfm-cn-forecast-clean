@@ -54,7 +54,7 @@ def run_pipeline(args) -> None:
         
         # 提取 OHLCV 数据作为额外特征
         ohlcv_inputs = None
-        ohlcv_cols = ["open", "high", "low", "volume"]
+        ohlcv_cols = ["open", "high", "low", "close", "volume"]
         if all(c in 历史数据.columns for c in ohlcv_cols):
             ohlcv_data = 历史数据[ohlcv_cols].to_numpy(dtype=np.float32)
             ohlcv_inputs = [ohlcv_data[-args.context_length:] if ohlcv_data.shape[0] > args.context_length else ohlcv_data]
@@ -199,14 +199,26 @@ def 保存结果(
     with open(输出目录 / "summary.json", "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2, ensure_ascii=False)
 
+    # 为了保证预测点清晰可见，绘图只展示最近一段历史
+    # 对于 1天或 5天预测，展示 context_length + 30 天足以观察趋势
+    显示窗口 = context_length + horizon + 30
+    绘图数据 = 历史数据.tail(显示窗口)
+    
+    # 为了连贯性，预测曲线的起点应该是历史数据的最后一点
+    绘制预测日期 = pd.to_datetime([最后日期] + 预测日期.tolist())
+    绘制预测点 = np.concatenate([[历史数据["value"].iloc[-1]], 点预测])
+    
     plt.figure(figsize=(12, 6))
-    plt.plot(历史数据["date"], 历史数据["value"], label="历史数据", linewidth=2)
-    plt.plot(预测日期, 点预测, label="点预测", linestyle="--", linewidth=2)
+    plt.plot(绘图数据["date"], 绘图数据["value"], label="历史数据", linewidth=2)
+    plt.plot(绘制预测日期, 绘制预测点, label="点预测", linestyle="--", linewidth=2, marker='o', markersize=4)
+    
     if 分位数预测.shape[1] >= 10:
+        # 同样为分位区间增加起始点
+        绘制分位 = np.vstack([np.full((1, 分位数预测.shape[1]), 历史数据["value"].iloc[-1]), 分位数预测])
         plt.fill_between(
-            预测日期,
-            分位数预测[:, 1],
-            分位数预测[:, -1],
+            绘制预测日期,
+            绘制分位[:, 1],
+            绘制分位[:, -1],
             alpha=0.15,
             label="分位区间",
         )
@@ -219,7 +231,7 @@ def 保存结果(
     plt.close()
 
     if kline:
-        _绘制K线图(历史数据, symbol, 输出目录)
+        _绘制K线图(绘图数据, symbol, 输出目录)
 
     print(
         json.dumps(

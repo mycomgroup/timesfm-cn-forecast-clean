@@ -99,3 +99,5 @@ def main() -> None:
     else:
         run_pipeline(args)
 
+if __name__ == "__main__":
+    main()
