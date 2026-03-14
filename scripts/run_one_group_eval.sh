@@ -15,21 +15,31 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# 获取位置参数
 GROUP="${1:-}"
 if [ -z "$GROUP" ]; then
-  echo "Usage: $0 <group> [feature_set] [train_days] [horizon] [context_len] [test_days] [min_days]"
+  echo "Usage: $0 <group> [feature_set] [train_days] [horizon] [context_len] [test_days] [min_days] [extra_args...]"
   exit 1
 fi
+shift
 
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
+FEATURE_SET="${1:-full}"
+[ $# -gt 0 ] && shift || true
 
-FEATURE_SET="${2:-full}"
-TRAIN_DAYS="${3:-60}"
-HORIZON="${4:-1}"
-CONTEXT_LEN="${5:-60}"
-TEST_DAYS="${6:-20}"
-MIN_DAYS="${7:-1000}"
+TRAIN_DAYS="${1:-60}"
+[ $# -gt 0 ] && shift || true
+
+HORIZON="${1:-1}"
+[ $# -gt 0 ] && shift || true
+
+CONTEXT_LEN="${1:-60}"
+[ $# -gt 0 ] && shift || true
+
+TEST_DAYS="${1:-20}"
+[ $# -gt 0 ] && shift || true
+
+MIN_DAYS="${1:-1000}"
+[ $# -gt 0 ] && shift || true
 
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"
 INDEX_DUCKDB="${INDEX_DUCKDB:-data/index_market.duckdb}"
@@ -38,6 +48,9 @@ if [ -z "${OUTPUT_DIR:-}" ] || [ "${OUTPUT_DIR:-}" == "data/research" ]; then
   TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
   TASK_DIR="data/tasks/eval_group_${GROUP}_${TIMESTAMP}"
   OUTPUT_DIR="${TASK_DIR}/groups"
+else
+  # 如果外部指定了 OUTPUT_DIR，我们直接使用它，不再包一层 groups
+  OUTPUT_DIR="${OUTPUT_DIR}"
 fi
 
 mkdir -p "${OUTPUT_DIR}"
@@ -55,4 +68,5 @@ python -m timesfm_cn_forecast.run_group_eval \
   --output-dir "${OUTPUT_DIR}" \
   ${START_DATE:+--start "$START_DATE"} \
   ${END_DATE:+--end "$END_DATE"} \
-  ${CONTEXT_LENGTHS:+--context-lengths "$CONTEXT_LENGTHS"}
+  ${CONTEXT_LENGTHS:+--context-lengths "$CONTEXT_LENGTHS"} \
+  "$@"

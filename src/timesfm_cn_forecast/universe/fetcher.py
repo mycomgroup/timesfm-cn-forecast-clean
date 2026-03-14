@@ -95,6 +95,13 @@ INDEX_MAP: dict[str, dict] = {
         "prefix_filter": ["3", "68", "4", "8"],
         "description": "自定义中小盘（沪深主板，过滤创业板/科创/北交所）",
     },
+    "test_dry_run": {
+        "source": "akshare",
+        "codes": ["000300"],
+        "prefix_filter": [],
+        "limit": 2,
+        "description": "Dry run test group (2 stocks)",
+    },
     # ── 申万三级行业分组（来自 industry_category.csv） ────────────────────────
     "ind_消费电子": {
         "source": "industry_csv",

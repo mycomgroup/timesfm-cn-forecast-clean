@@ -201,6 +201,7 @@ def main() -> None:
     parser.add_argument("--start", type=str, default=None, help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end", type=str, default=None, help="End date (YYYY-MM-DD)")
     parser.add_argument("--output-dir", type=str, default="data/research", help="Output root dir")
+    parser.add_argument("--sample-size", type=int, default=None, help="Number of stocks to sample for evaluation")
 
     args = parser.parse_args()
     context_lengths = _parse_context_lengths(args.context_lengths)
@@ -213,14 +214,26 @@ def main() -> None:
     if not symbols:
         raise RuntimeError(f"No symbols found for group: {args.group}")
 
-    symbols = _filter_by_min_days(symbols, args.market_duckdb, args.min_days)
-    if not symbols:
-        raise RuntimeError("No symbols left after min-days filter.")
+    # 1. 训练阶段：始终使用该组的全量股票进行适配器训练 (Group Training)
+    print(f"INFO: Training group adapter on all {len(symbols)} symbols from '{args.group}'...")
+    symbols_for_train = _filter_by_min_days(symbols, args.market_duckdb, args.min_days)
+    if not symbols_for_train:
+        raise RuntimeError("No symbols left for training after min-days filter.")
+    
+    adapter_path = _train_group_adapter(symbols_for_train, args, group_dir)
 
-    adapter_path = _train_group_adapter(symbols, args, group_dir)
+    # 2. 验证阶段：如果指定了 sample-size，则随机挑选个股进行验证 (Sampled Validation)
+    symbols_for_eval = symbols
+    if args.sample_size and args.sample_size < len(symbols):
+        import random
+        random.seed(42) # 固定种子保证可复现
+        symbols_for_eval = random.sample(symbols, args.sample_size)
+        print(f"INFO: Randomly sampled {args.sample_size} symbols for evaluation.")
+    else:
+        print(f"INFO: Evaluating on all {len(symbols)} symbols.")
 
     results = []
-    for symbol in symbols:
+    for symbol in symbols_for_eval:
         try:
             stats_df = run_backtest(
                 symbol=symbol,
@@ -235,10 +248,7 @@ def main() -> None:
                 duckdb_path=args.market_duckdb,
             )
             if stats_df is None or stats_df.empty:
-                results.append({
-                    "symbol": symbol,
-                    "status": "empty",
-                })
+                results.append({"symbol": symbol, "status": "empty"})
                 continue
 
             summary = _summarize_best(stats_df)
@@ -255,8 +265,18 @@ def main() -> None:
             })
 
     df = pd.DataFrame(results)
-    output_path = group_dir / "results.csv"
+    # 记录实验参数
+    df["feature_set"] = args.feature_set
+    df["train_days"] = args.train_days
+    df["horizon"] = args.horizon
+    df["context_len"] = args.context_len
+    df["sample_size"] = args.sample_size
+    
+    # 结果文件名包含关键参数，便于在同一目录下汇总
+    filename = f"results_{args.feature_set}_td{args.train_days}_h{args.horizon}_cl{args.context_len}_ss{args.sample_size if args.sample_size else 'all'}.csv"
+    output_path = group_dir / filename
     df.to_csv(output_path, index=False)
+    print(f"Group investigation results saved to {output_path}")
 
 
 if __name__ == "__main__":
