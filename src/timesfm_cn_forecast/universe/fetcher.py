@@ -151,6 +151,42 @@ INDEX_MAP: dict[str, dict] = {
         "prefix_filter": [],
         "description": "申万行业：其他化学制品",
     },
+    "ind_半导体设备": {
+        "source": "industry_csv",
+        "category": "半导体设备III",
+        "prefix_filter": [],
+        "description": "申万行业：半导体设备",
+    },
+    "ind_软件开发": {
+        "source": "industry_csv",
+        "category": "横向通用软件III",
+        "prefix_filter": [],
+        "description": "申万行业：横向通用软件",
+    },
+    "ind_影视院线": {
+        "source": "industry_csv",
+        "category": "影视动漫制作III",
+        "prefix_filter": [],
+        "description": "申万行业：影视动漫",
+    },
+    "ind_白酒": {
+        "source": "industry_csv",
+        "category": "白酒III",
+        "prefix_filter": [],
+        "description": "申万行业：白酒",
+    },
+    "ind_乘用车": {
+        "source": "industry_csv",
+        "category": "综合乘用车III",
+        "prefix_filter": [],
+        "description": "申万行业：乘用车",
+    },
+    "ind_电池": {
+        "source": "industry_csv",
+        "category": "锂电池III",
+        "prefix_filter": [],
+        "description": "申万行业：锂电池",
+    },
     # ── 概念分组（来自 concept_category.csv）──────────────────────────────────
     "con_低空经济": {
         "source": "concept_csv",
@@ -194,7 +230,61 @@ INDEX_MAP: dict[str, dict] = {
         "prefix_filter": [],
         "description": "概念：新能源",
     },
+    "con_人工智能": {
+        "source": "concept_csv",
+        "category": "人工智能大模型",
+        "prefix_filter": [],
+        "description": "概念：人工智能大模型",
+    },
+    "con_算力租赁": {
+        "source": "concept_csv",
+        "category": "算力租赁",
+        "prefix_filter": [],
+        "description": "概念：算力中心/租赁",
+    },
+    "con_固态电池": {
+        "source": "concept_csv",
+        "category": "固态电池",
+        "prefix_filter": [],
+        "description": "概念：固态电池",
+    },
+    "con_英伟达概念": {
+        "source": "concept_csv",
+        "category": "英伟达概念",
+        "prefix_filter": [],
+        "description": "概念：英伟达产业链",
+    },
+    "con_华为概念": {
+        "source": "concept_csv",
+        "category": "华为鸿蒙",
+        "prefix_filter": [],
+        "description": "概念：华为鸿蒙",
+    },
 }
+
+try:
+    # 动态追加更多热门行业
+    _extra_inds = [
+        "股份制银行III", "房地产开发III", "电池化学品III", "显示器件III", "火电III", 
+        "生猪养殖III", "通信网络设备及器件III", "证券III", "中药III", "风力发电III",
+        "光伏辅材III", "电网自动化III", "医疗设备III", "工程机械整机III", "白色家电III"
+    ]
+    for _cat in _extra_inds:
+        _key = f"ind_{_cat.replace('III', '')}"
+        if _key not in INDEX_MAP:
+            INDEX_MAP[_key] = {"source": "industry_csv", "category": _cat, "prefix_filter": [], "description": f"申万行业：{_cat}"}
+
+    # 动态追加热门概念
+    _extra_cons = [
+        "储能", "机器人概念", "工业母机", "量子通信", "脑机接口", "飞行汽车(eVTOL)", 
+        "虚拟现实", "跨境电商", "央企国企改革", "高股息100", "超级品牌", "工业4.0"
+    ]
+    for _cat in _extra_cons:
+        _key = f"con_{_cat.replace('(eVTOL)', '')}"
+        if _key not in INDEX_MAP:
+            INDEX_MAP[_key] = {"source": "concept_csv", "category": _cat, "prefix_filter": [], "description": f"概念：{_cat}"}
+except Exception as e:
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -231,18 +321,35 @@ def _fetch_from_akshare(index_symbol: str, cfg: dict) -> pd.DataFrame:
     all_frames = []
     for akcode in cfg["codes"]:
         logger.info(f"  [{index_symbol}] AkShare code: {akcode}...")
+        df = None
         try:
             df = ak.index_stock_cons(symbol=akcode)
             df = df.rename(columns={"品种代码": "code", "品种名称": "name", "纳入日期": "in_date"})
-            df["code"] = df["code"].apply(_normalize_code_6digit)
-            df["in_date"] = pd.to_datetime(df["in_date"], errors="coerce").dt.date
+        except Exception as err:
+            logger.warning(f"  [{index_symbol}] 拉取 {akcode} 默认接口失败: {err}，尝试 csindex...")
+            try:
+                # 尝试 csindex 备用接口 (例如 000300)
+                df = ak.index_stock_cons_csindex(symbol=akcode)
+                df = df.rename(columns={"成分券代码": "code", "成分券名称": "name", "日期": "in_date"})
+            except Exception as err2:
+                logger.warning(f"  [{index_symbol}] csindex 也失败: {err2}")
+                pass
+        
+        if df is not None and not df.empty:
+            if "code" in df.columns:
+                df["code"] = df["code"].apply(_normalize_code_6digit)
+            if "in_date" in df.columns:
+                df["in_date"] = pd.to_datetime(df["in_date"], errors="coerce").dt.date
+            else:
+                df["in_date"] = None
+            if "name" not in df.columns:
+                df["name"] = ""
             df["akshare_code"] = akcode
             all_frames.append(df[["akshare_code", "code", "name", "in_date"]])
-        except Exception as err:
-            logger.warning(f"  [{index_symbol}] 拉取 {akcode} 失败: {err}")
 
     if not all_frames:
-        raise RuntimeError(f"所有 AkShare 接口均失败: {index_symbol}")
+        logger.warning(f"所有 AkShare 接口均失败: {index_symbol}，返回空数据框。")
+        return pd.DataFrame(columns=["akshare_code", "code", "name", "in_date"])
     return pd.concat(all_frames, ignore_index=True)
 
 
@@ -286,6 +393,7 @@ def fetch_constituents(
     index_symbol: str,
     industry_csv: str = _DEFAULT_INDUSTRY_CSV,
     concept_csv: str = _DEFAULT_CONCEPT_CSV,
+    duckdb_path: str = "data/index_market.duckdb",
 ) -> pd.DataFrame:
     """
     拉取指定逻辑指数/分组的所有成份股，规范化后返回 DataFrame。
@@ -305,20 +413,40 @@ def fetch_constituents(
     cfg = INDEX_MAP[index_symbol]
     source = cfg.get("source", "akshare")
 
-    if source == "akshare":
-        merged = _fetch_from_akshare(index_symbol, cfg)
-    elif source == "industry_csv":
-        merged = _fetch_from_csv(
-            index_symbol, cfg, industry_csv,
-            code_col="code", name_col=None, category_col="category"
-        )
-    elif source == "concept_csv":
-        merged = _fetch_from_csv(
-            index_symbol, cfg, concept_csv,
-            code_col="code", name_col="name", category_col="category"
-        )
-    else:
-        raise ValueError(f"未知 source 类型: {source}")
+    merged = pd.DataFrame() # 初始化为空，防止未绑定异常
+    try:
+        if source == "akshare":
+            merged = _fetch_from_akshare(index_symbol, cfg)
+        elif source == "industry_csv":
+            merged = _fetch_from_csv(
+                index_symbol, cfg, industry_csv,
+                code_col="code", name_col=None, category_col="category"
+            )
+        elif source == "concept_csv":
+            merged = _fetch_from_csv(
+                index_symbol, cfg, concept_csv,
+                code_col="code", name_col="name", category_col="category"
+            )
+        else:
+            raise ValueError(f"未知 source 类型: {source}")
+    except Exception as fetch_err:
+        logger.warning(f"  [{index_symbol}] 在线或本地 fetch_err 异常: {fetch_err}")
+
+    # ===== 新增 DuckDB 后备熔断机制 =====
+    # 如果此时 merged 还是为空（比如所有 API 真的全挂了），或者强制优先从本地读取
+    # 为了保证健壮性，这里我们在拉取失败时自动降级到本地已有的全量旧数据
+    if merged.empty and Path(duckdb_path).exists():
+        logger.warning(f"  [{index_symbol}] 在线/CSV拉取获取到空数据，尝试降级读取本地已保存的 duckdb 缓存...")
+        try:
+            from timesfm_cn_forecast.universe.storage import get_index_constituents
+            df_cache = get_index_constituents(index_symbol, duckdb_path=duckdb_path)
+            if df_cache is not None and not df_cache.empty:
+                logger.info(f"  [{index_symbol}] 成功从本地 duckdb 恢复 {len(df_cache)} 条历史快照数据。")
+                # DataFrame 应该符合同样的字段定义
+                return df_cache
+        except Exception as e:
+            logger.warning(f"  [{index_symbol}] 读取本地 duckdb 失败: {e}")
+            pass
 
     # 去重
     merged = merged.drop_duplicates(subset=["code"]).reset_index(drop=True)

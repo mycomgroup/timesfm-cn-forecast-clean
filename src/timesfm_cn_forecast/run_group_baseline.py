@@ -32,6 +32,7 @@ def main() -> None:
     parser.add_argument("--start", type=str, default="2021-01-01")
     parser.add_argument("--end", type=str, default=None)
     parser.add_argument("--output-dir", type=str, default="data/baseline_results")
+    parser.add_argument("--exclude-file", type=str, default=None, help="Path to txt file of symbols to exclude")
     parser.add_argument("--sample-size", type=int, default=10, help="Number of stocks to sample per group for eval")
 
     args = parser.parse_args()
@@ -50,6 +51,17 @@ def main() -> None:
     symbols_valid = _filter_by_min_days(symbols, args.market_duckdb, args.min_days)
     if not symbols_valid:
         print(f"No symbols left after min-days for group {args.group}")
+        return
+
+    # Filter out excluded symbols
+    if args.exclude_file and Path(args.exclude_file).exists():
+        with open(args.exclude_file, "r") as f:
+            excluded = {line.strip() for line in f if line.strip()}
+        symbols_valid = [s for s in symbols_valid if s not in excluded]
+        print(f"Excluded {len(excluded)} symbols from consideration. {len(symbols_valid)} remain for {args.group}.")
+
+    if not symbols_valid:
+        print(f"No symbols left after exclusion and min-days for group {args.group}")
         return
 
     # Random sampling to save time across many groups
