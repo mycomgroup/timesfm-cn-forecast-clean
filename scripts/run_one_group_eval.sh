@@ -14,6 +14,8 @@ set -euo pipefail
 #    bash scripts/run_one_group_eval.sh CYBZ
 
 cd "$(dirname "$0")/.."
+source "$(dirname "$0")/_env.sh"
+setup_project_env duckdb numpy pandas torch sklearn
 
 # 获取位置参数
 GROUP="${1:-}"
@@ -55,7 +57,7 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 
-python -m timesfm_cn_forecast.run_group_eval \
+"${PYTHON_BIN}" -m timesfm_cn_forecast.run_group_eval \
   --group "${GROUP}" \
   --market-duckdb "${MARKET_DUCKDB}" \
   --index-duckdb "${INDEX_DUCKDB}" \

@@ -53,6 +53,11 @@ def main():
         help="概念 CSV 路径（默认: data/concept_category.csv）",
     )
     parser.add_argument(
+        "--group-definitions-dir",
+        default="data/group_definitions",
+        help="动态分组 JSON 目录（默认: data/group_definitions）",
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="仅列出 DuckDB 中已存储的分组及成份股数量，不执行拉取",
@@ -72,18 +77,18 @@ def main():
     total_fail = 0
 
     for sym in args.index:
-        if sym not in INDEX_MAP:
-            logger.warning(f"跳过未知指数: {sym}")
-            total_fail += 1
-            continue
-
-        desc = INDEX_MAP[sym]["description"]
+        if sym in INDEX_MAP:
+            desc = INDEX_MAP[sym]["description"]
+        else:
+            desc = "动态分组（来自 data/group_definitions/*.json）"
         logger.info(f"=== 开始拉取 [{sym}] {desc} ===")
         try:
             df = fetch_constituents(
                 sym,
                 industry_csv=args.industry_csv,
                 concept_csv=args.concept_csv,
+                group_definitions_dir=args.group_definitions_dir,
+                duckdb_path=args.duckdb_path,
             )
             written = upsert_constituents(df, args.duckdb_path)
             logger.info(f"  [{sym}] 写入完成，共 {written} 条。")

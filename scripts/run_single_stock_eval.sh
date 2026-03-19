@@ -6,6 +6,8 @@ set -euo pipefail
 # Example: bash scripts/run_single_stock_eval.sh 002594 60
 
 cd "$(dirname "$0")/.."
+source "$(dirname "$0")/_env.sh"
+setup_project_env pandas numpy torch sklearn akshare matplotlib
 
 SYMBOL="${1:-}"
 if [ -z "$SYMBOL" ]; then
@@ -23,10 +25,6 @@ TRAIN_END="${6:-2025-12-31}"
 TEST_START="${7:-2026-01-01}"
 TEST_END="${8:-2026-03-10}"
 
-# Ensure anaconda python is in PATH and PYTHONPATH is set
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
-
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 TASK_DIR="data/tasks/eval_single_${SYMBOL}_${TIMESTAMP}"
 
@@ -43,13 +41,13 @@ EVAL_LOG="${LOG_DIR}/eval.log"
 
 echo "=== Stage 1: Data Preparation ==="
 # Assuming start date 2015-01-01 to give enough history for context and training
-python -m timesfm_cn_forecast.providers \
+"${PYTHON_BIN}" -m timesfm_cn_forecast.providers \
   --symbol "${SYMBOL}" \
   --start "2015-01-01" \
   --output "${HISTORY_CSV}"
 
 echo "=== Stage 2: Adapter Training ==="
-python -m timesfm_cn_forecast.finetuning \
+"${PYTHON_BIN}" -m timesfm_cn_forecast.finetuning \
   --stock-code "${SYMBOL}" \
   --data-path "${HISTORY_CSV}" \
   --output-path "${ADAPTER_PATH}" \
@@ -59,7 +57,7 @@ python -m timesfm_cn_forecast.finetuning \
   --feature-set "${FEATURE_SET}"
 
 echo "=== Stage 3: Backtest Evaluation ==="
-python -m timesfm_cn_forecast.backtest \
+"${PYTHON_BIN}" -m timesfm_cn_forecast.backtest \
   --symbol "${SYMBOL}" \
   --provider local \
   --input-csv "${HISTORY_CSV}" \

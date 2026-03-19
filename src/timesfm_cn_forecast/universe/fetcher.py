@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 # 默认本地 CSV 路径（相对于项目根目录）
 _DEFAULT_INDUSTRY_CSV = "data/industry_category.csv"
 _DEFAULT_CONCEPT_CSV = "data/concept_category.csv"
+_DEFAULT_GROUP_DEFINITIONS_DIR = "data/group_definitions"
 
 # ---------------------------------------------------------------------------
 # INDEX_MAP
@@ -385,6 +387,44 @@ def _fetch_from_csv(
     return df[["akshare_code", "code", "name", "in_date"]]
 
 
+def _fetch_from_group_definition(index_symbol: str, group_definitions_dir: str) -> pd.DataFrame:
+    """从 data/group_definitions/*.json 读取动态分组。"""
+    base = Path(group_definitions_dir)
+    if not base.exists():
+        return pd.DataFrame(columns=["akshare_code", "code", "name", "in_date"])
+
+    matches = sorted(base.glob("*.json"))
+    for file in matches:
+        try:
+            payload = json.loads(file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        # 支持两种结构:
+        # 1) {"group_name": ["000001", "000002"]}
+        # 2) {"groups":[{"name":"group_name","symbols":[...]}]}
+        if isinstance(payload, dict) and "groups" in payload and isinstance(payload["groups"], list):
+            for item in payload["groups"]:
+                if str(item.get("name", "")).strip() == index_symbol:
+                    syms = item.get("symbols", [])
+                    if not syms:
+                        continue
+                    df = pd.DataFrame({"code": [str(s).strip().zfill(6) for s in syms]})
+                    df["akshare_code"] = index_symbol
+                    df["name"] = ""
+                    df["in_date"] = None
+                    return df[["akshare_code", "code", "name", "in_date"]]
+        elif isinstance(payload, dict) and index_symbol in payload and isinstance(payload[index_symbol], list):
+            syms = payload[index_symbol]
+            df = pd.DataFrame({"code": [str(s).strip().zfill(6) for s in syms]})
+            df["akshare_code"] = index_symbol
+            df["name"] = ""
+            df["in_date"] = None
+            return df[["akshare_code", "code", "name", "in_date"]]
+
+    return pd.DataFrame(columns=["akshare_code", "code", "name", "in_date"])
+
+
 # ---------------------------------------------------------------------------
 # 主接口
 # ---------------------------------------------------------------------------
@@ -393,6 +433,7 @@ def fetch_constituents(
     index_symbol: str,
     industry_csv: str = _DEFAULT_INDUSTRY_CSV,
     concept_csv: str = _DEFAULT_CONCEPT_CSV,
+    group_definitions_dir: str = _DEFAULT_GROUP_DEFINITIONS_DIR,
     duckdb_path: str = "data/index_market.duckdb",
 ) -> pd.DataFrame:
     """
@@ -406,12 +447,8 @@ def fetch_constituents(
     Returns:
         DataFrame with columns: [index_symbol, akshare_code, code, name, in_date, fetched_at]
     """
-    if index_symbol not in INDEX_MAP:
-        valid = list(INDEX_MAP.keys())
-        raise ValueError(f"不支持的分组: {index_symbol}，可用选项: {valid}")
-
-    cfg = INDEX_MAP[index_symbol]
-    source = cfg.get("source", "akshare")
+    cfg = INDEX_MAP.get(index_symbol)
+    source = cfg.get("source", "akshare") if cfg else "dynamic"
 
     merged = pd.DataFrame() # 初始化为空，防止未绑定异常
     try:
@@ -427,6 +464,8 @@ def fetch_constituents(
                 index_symbol, cfg, concept_csv,
                 code_col="code", name_col="name", category_col="category"
             )
+        elif source == "dynamic":
+            merged = _fetch_from_group_definition(index_symbol, group_definitions_dir)
         else:
             raise ValueError(f"未知 source 类型: {source}")
     except Exception as fetch_err:
@@ -452,7 +491,7 @@ def fetch_constituents(
     merged = merged.drop_duplicates(subset=["code"]).reset_index(drop=True)
 
     # 前缀过滤
-    prefix_filter = cfg.get("prefix_filter", [])
+    prefix_filter = cfg.get("prefix_filter", []) if cfg else []
     if prefix_filter:
         before = len(merged)
         merged = merged[
@@ -461,7 +500,7 @@ def fetch_constituents(
         logger.info(f"  [{index_symbol}] 前缀过滤: {before} -> {len(merged)} 只")
 
     # 可选：限制数量（如 small_25 临时取前 50）
-    limit = cfg.get("limit")
+    limit = cfg.get("limit") if cfg else None
     if isinstance(limit, int) and limit > 0:
         before = len(merged)
         merged = merged.head(limit).reset_index(drop=True)

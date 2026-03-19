@@ -3,6 +3,8 @@ outputs/
 output/
 *.pth
 *.png
+*.log
+*.egg-info/
 __pycache__/
 .env
 .ipynb_checkpoints/

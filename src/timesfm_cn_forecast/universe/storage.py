@@ -103,6 +103,28 @@ def query_constituents(index_symbol: str, duckdb_path: str) -> list[str]:
         con.close()
 
 
+def get_index_constituents(index_symbol: str, duckdb_path: str) -> pd.DataFrame:
+    """返回指定分组的完整成份股快照。"""
+    con = _get_con(duckdb_path)
+    try:
+        return con.execute(
+            """
+            SELECT index_symbol, akshare_code, code, name, in_date, fetched_at
+            FROM index_constituents
+            WHERE index_symbol = ?
+            ORDER BY code
+            """,
+            [index_symbol],
+        ).fetchdf()
+    except Exception as err:
+        logger.warning(f"读取分组快照失败（表可能尚未创建）: {err}")
+        return pd.DataFrame(
+            columns=["index_symbol", "akshare_code", "code", "name", "in_date", "fetched_at"]
+        )
+    finally:
+        con.close()
+
+
 def list_all_symbols(duckdb_path: str) -> pd.DataFrame:
     """
     列出 DuckDB 中已存储的所有指数及其成份股数量。

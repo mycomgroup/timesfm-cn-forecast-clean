@@ -40,8 +40,9 @@ def main() -> None:
     parser.add_argument("--sample-size", type=int, default=10, help="Number of stocks to sample per group for eval")
 
     args = parser.parse_args()
-    
+
     context_lengths = [int(x.strip()) for x in args.context_lengths.split(",") if x.strip()]
+    rolling_windows = [int(x.strip()) for x in args.rolling_windows.split(",") if x.strip()]
     output_root = Path(args.output_dir)
     group_dir = output_root / args.group
     group_dir.mkdir(parents=True, exist_ok=True)
@@ -139,4 +140,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    rolling_windows = [int(x.strip()) for x in args.rolling_windows.split(",") if x.strip()]

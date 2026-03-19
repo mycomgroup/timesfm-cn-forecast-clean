@@ -20,6 +20,17 @@ def _to_timestamp(date_str: Optional[str]) -> Optional[pd.Timestamp]:
     return pd.Timestamp(date_str)
 
 
+def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "date" in out.columns:
+        out["date"] = pd.to_datetime(out["date"])
+        out = out.sort_values("date").set_index("date")
+    else:
+        out.index = pd.to_datetime(out.index)
+        out = out.sort_index()
+    return out
+
+
 def calculate_trading_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
@@ -225,7 +236,7 @@ def run_backtest(
     if df.empty:
         return None
 
-    df = df.sort_index().ffill().bfill()
+    df = _ensure_datetime_index(df).ffill().bfill()
 
     ts_train_end = _to_timestamp(train_end_date)
     ts_test_start = _to_timestamp(test_start_date)

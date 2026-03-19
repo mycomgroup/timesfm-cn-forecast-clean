@@ -2,9 +2,8 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
+source "$(dirname "$0")/_env.sh"
+setup_project_env duckdb numpy pandas torch sklearn
 
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"
 INDEX_DUCKDB="${INDEX_DUCKDB:-data/index_market.duckdb}"
@@ -22,7 +21,7 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 OUTPUT_DIR="data/tasks/recent_group_baseline_${TIMESTAMP}"
 mkdir -p "${OUTPUT_DIR}"
 
-MAX_GROUPS="${MAX_GROUPS}" INDEX_DUCKDB="${INDEX_DUCKDB}" GROUP_LIST=$(python - <<'PY'
+MAX_GROUPS="${MAX_GROUPS}" INDEX_DUCKDB="${INDEX_DUCKDB}" GROUP_LIST=$("${PYTHON_BIN}" - <<'PY'
 import os
 import sys
 from pathlib import Path
@@ -39,7 +38,7 @@ PY
 
 for group in $GROUP_LIST; do
   echo ">>> recent baseline: ${group}"
-  python -m timesfm_cn_forecast.run_group_baseline \
+  "${PYTHON_BIN}" -m timesfm_cn_forecast.run_group_baseline \
     --group "${group}" \
     --market-duckdb "${MARKET_DUCKDB}" \
     --index-duckdb "${INDEX_DUCKDB}" \

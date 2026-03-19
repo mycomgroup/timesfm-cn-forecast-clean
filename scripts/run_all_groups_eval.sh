@@ -15,6 +15,8 @@ set -euo pipefail
 #    SKIP_EXISTING=0 ANALYZE=0 bash scripts/run_all_groups_eval.sh
 
 cd "$(dirname "$0")/.."
+source "$(dirname "$0")/_env.sh"
+setup_project_env duckdb numpy pandas torch sklearn
 
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"
 INDEX_DUCKDB="${INDEX_DUCKDB:-data/index_market.duckdb}"
@@ -24,9 +26,6 @@ TASK_DIR="data/tasks/eval_all_groups_${TIMESTAMP}"
 OUTPUT_DIR="${TASK_DIR}/groups"
 
 mkdir -p "${OUTPUT_DIR}"
-
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
 
 FEATURE_SET="${FEATURE_SET:-full}"
 TRAIN_DAYS="${TRAIN_DAYS:-60}"
@@ -39,7 +38,7 @@ SKIP_EXISTING="${SKIP_EXISTING:-1}"
 ANALYZE="${ANALYZE:-1}"
 
 GROUPS=$(
-  INDEX_DUCKDB="${INDEX_DUCKDB}" python - <<'PY'
+  INDEX_DUCKDB="${INDEX_DUCKDB}" "${PYTHON_BIN}" - <<'PY'
 import os
 import sys
 from pathlib import Path
@@ -76,5 +75,5 @@ for group in $GROUPS; do
 done
 
 if [ "$ANALYZE" = "1" ]; then
-  python -m timesfm_cn_forecast.analyze_group_results --input-dir "${OUTPUT_DIR}"
+  "${PYTHON_BIN}" -m timesfm_cn_forecast.analyze_group_results --input-dir "${OUTPUT_DIR}"
 fi

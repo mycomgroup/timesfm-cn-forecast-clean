@@ -29,6 +29,11 @@ from timesfm_cn_forecast.universe import get_stock_universe
 
 
 DEFAULT_CONTEXT_LENGTHS = [30, 60, 90, 128, 256, 512]
+SUPER_NODE_RULES = {
+    "hitrate_min": 51.0,
+    "recent20_avg_ret_min": 0.0,
+    "profit_factor_min": 1.0,
+}
 
 
 @dataclass
@@ -49,6 +54,17 @@ def _parse_rolling_windows(raw: str | None) -> List[int]:
     if not raw:
         return [20, 40, 60]
     return [int(item.strip()) for item in raw.split(",") if item.strip()]
+
+
+def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "date" in out.columns:
+        out["date"] = pd.to_datetime(out["date"])
+        out = out.sort_values("date").set_index("date")
+    else:
+        out.index = pd.to_datetime(out.index)
+        out = out.sort_index()
+    return out
 
 
 def _chunked(items: Iterable[str], size: int) -> Iterable[List[str]]:
@@ -117,6 +133,7 @@ def _build_training_samples(
         df = load_historical_data(req)
         if df.empty:
             continue
+        df = _ensure_datetime_index(df)
 
         if args.train_end:
             df = df[df.index <= pd.Timestamp(args.train_end)]
@@ -220,9 +237,73 @@ def _train_group_adapter(symbols: List[str], args: argparse.Namespace, output_di
     return adapter_path
 
 
+def _rank_pct(series: pd.Series, ascending: bool) -> pd.Series:
+    vals = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    if vals.notna().sum() == 0:
+        return pd.Series(0.0, index=series.index, dtype=float)
+    fill_val = float(vals.median()) if vals.notna().any() else 0.0
+    vals = vals.fillna(fill_val)
+    if vals.nunique(dropna=True) <= 1:
+        return pd.Series(0.5, index=series.index, dtype=float)
+    return vals.rank(method="average", ascending=ascending, pct=True).astype(float)
+
+
+def _compute_trade_score(
+    df: pd.DataFrame,
+    recent20_col: str,
+    recent60_col: str,
+    hitrate_col: str,
+    profit_factor_col: str,
+    max_drawdown_col: str,
+) -> pd.Series:
+    """统一计算 TradeScore，使用分位数归一化后加权。"""
+    s_recent20 = _rank_pct(df[recent20_col], ascending=False)
+    s_recent60 = _rank_pct(df[recent60_col], ascending=False)
+    s_hitrate = _rank_pct(df[hitrate_col], ascending=False)
+    s_pf = _rank_pct(df[profit_factor_col], ascending=False)
+    mdd_abs = pd.to_numeric(df[max_drawdown_col], errors="coerce").abs()
+    s_mdd = _rank_pct(mdd_abs, ascending=True)
+    return (
+        0.40 * s_recent20
+        + 0.20 * s_recent60
+        + 0.20 * s_hitrate
+        + 0.10 * s_pf
+        - 0.10 * s_mdd
+    )
+
+
+def _select_best_context_row(stats_df: pd.DataFrame) -> pd.Series:
+    """优先按交易价值选 context；退化到 RMSE 最小。"""
+    metric_cols = [
+        "Recent20AvgRet",
+        "Recent60AvgRet",
+        "HitRate",
+        "ProfitFactor",
+        "MaxDrawdown",
+    ]
+    if not all(col in stats_df.columns for col in metric_cols):
+        return stats_df.loc[stats_df["RMSE"].idxmin()]
+
+    scored = stats_df.copy()
+    scored["_trade_score_ctx"] = _compute_trade_score(
+        scored,
+        recent20_col="Recent20AvgRet",
+        recent60_col="Recent60AvgRet",
+        hitrate_col="HitRate",
+        profit_factor_col="ProfitFactor",
+        max_drawdown_col="MaxDrawdown",
+    )
+    best_score = float(scored["_trade_score_ctx"].max())
+    tied = scored[scored["_trade_score_ctx"] == best_score]
+    if "RMSE" in tied.columns and not tied["RMSE"].isna().all():
+        best_idx = tied["RMSE"].idxmin()
+    else:
+        best_idx = tied.index[0]
+    return scored.loc[best_idx]
+
+
 def _summarize_best(stats_df: pd.DataFrame) -> dict[str, float]:
-    best_idx = stats_df["RMSE"].idxmin()
-    row = stats_df.loc[best_idx]
+    row = _select_best_context_row(stats_df)
     summary = {
         "best_context_len": int(row["ContextLen"]),
         "rmse": float(row["RMSE"]),
@@ -243,12 +324,75 @@ def _summarize_best(stats_df: pd.DataFrame) -> dict[str, float]:
         "volatility": float(row["Volatility"]),
         "num_trades": float(row["NumTrades"]),
         "exposure": float(row["Exposure"]),
+        "trade_score_context": float(row.get("_trade_score_ctx", np.nan)),
     }
     for window in (20, 40, 60):
         summary[f"recent{window}_avg_ret"] = float(row.get(f"Recent{window}AvgRet", 0.0))
         summary[f"recent{window}_cum_ret"] = float(row.get(f"Recent{window}CumRet", 0.0))
         summary[f"recent{window}_hitrate"] = float(row.get(f"Recent{window}HitRate", 0.0))
     return summary
+
+
+def _attach_group_trade_fields(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if out.empty:
+        return out
+
+    out["trade_score"] = np.nan
+    out["recent_rank"] = np.nan
+    out["supernode_candidate"] = False
+
+    ok_mask = out["status"] == "ok"
+    if not ok_mask.any():
+        return out
+
+    ok_df = out.loc[ok_mask].copy()
+    ok_df["trade_score"] = _compute_trade_score(
+        ok_df,
+        recent20_col="recent20_avg_ret",
+        recent60_col="recent60_avg_ret",
+        hitrate_col="hitrate",
+        profit_factor_col="profit_factor",
+        max_drawdown_col="max_drawdown",
+    )
+    ok_df["recent_rank"] = (
+        pd.to_numeric(ok_df["recent20_avg_ret"], errors="coerce")
+        .rank(method="dense", ascending=False)
+        .astype("Int64")
+    )
+    ok_df["supernode_candidate"] = (
+        (pd.to_numeric(ok_df["hitrate"], errors="coerce") >= SUPER_NODE_RULES["hitrate_min"])
+        & (
+            pd.to_numeric(ok_df["recent20_avg_ret"], errors="coerce")
+            > SUPER_NODE_RULES["recent20_avg_ret_min"]
+        )
+        & (
+            pd.to_numeric(ok_df["profit_factor"], errors="coerce")
+            > SUPER_NODE_RULES["profit_factor_min"]
+        )
+    )
+
+    out.loc[ok_mask, "trade_score"] = ok_df["trade_score"].to_numpy()
+    out.loc[ok_mask, "recent_rank"] = ok_df["recent_rank"].to_numpy()
+    out.loc[ok_mask, "supernode_candidate"] = ok_df["supernode_candidate"].to_numpy()
+    return out
+
+
+def _extract_top3(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    ok_df = df[df["status"] == "ok"].copy()
+    if ok_df.empty:
+        return ok_df
+
+    ok_df = ok_df.sort_values(
+        by=["trade_score", "recent20_avg_ret", "hitrate", "profit_factor"],
+        ascending=[False, False, False, False],
+        na_position="last",
+    ).reset_index(drop=True)
+    top3 = ok_df.head(3).copy()
+    top3["group_rank"] = np.arange(1, len(top3) + 1)
+    return top3
 
 
 def main() -> None:
@@ -271,6 +415,7 @@ def main() -> None:
     parser.add_argument("--rolling-windows", type=str, default="20,40,60")
     parser.add_argument("--output-dir", type=str, default="data/research")
     parser.add_argument("--sample-size", type=int, default=None)
+    parser.add_argument("--must-include-symbol", type=str, default=None, help="Force include symbol in eval sample")
     parser.add_argument("--model-type", type=str, default="ridge", choices=["lstsq", "ridge", "huber"])
     parser.add_argument("--ridge-alpha", type=float, default=0.1)
     parser.add_argument("--huber-epsilon", type=float, default=1.35)
@@ -296,9 +441,16 @@ def main() -> None:
     adapter_path = _train_group_adapter(symbols_for_train, args, group_dir, model=base_model)
 
     symbols_for_eval = symbols
+    must_include = None
+    if args.must_include_symbol:
+        must_include = str(args.must_include_symbol)
+        must_include = "".join(ch for ch in must_include if ch.isdigit()).zfill(6)
+
     if args.sample_size and args.sample_size < len(symbols):
         random.seed(42)
         symbols_for_eval = random.sample(symbols, args.sample_size)
+        if must_include and must_include in symbols and must_include not in symbols_for_eval:
+            symbols_for_eval[0] = must_include
 
     results = []
     for symbol in symbols_for_eval:
@@ -329,6 +481,9 @@ def main() -> None:
             results.append({"symbol": symbol, "status": "error", "error": str(exc)})
 
     df = pd.DataFrame(results)
+    if not df.empty and "symbol" in df.columns:
+        df["symbol"] = df["symbol"].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(6)
+    df["group_name"] = args.group
     df["feature_set"] = args.feature_set
     df["train_days"] = args.train_days
     df["horizon"] = args.horizon
@@ -337,6 +492,12 @@ def main() -> None:
     df["train_end"] = args.train_end
     df["test_start"] = args.test_start
     df["test_end"] = args.test_end
+    df = _attach_group_trade_fields(df)
+
+    full_results_path = group_dir / "group_full_results.csv"
+    top3_summary_path = group_dir / "group_top3_summary.csv"
+    df.to_csv(full_results_path, index=False)
+    _extract_top3(df).to_csv(top3_summary_path, index=False)
 
     filename = (
         f"results_{args.feature_set}_td{args.train_days}_h{args.horizon}_"
@@ -356,11 +517,16 @@ def main() -> None:
         "model_type": args.model_type,
         "horizon": args.horizon,
         "feature_set": args.feature_set,
+        "supernode_rules": SUPER_NODE_RULES,
+        "full_results_file": str(full_results_path.name),
+        "top3_summary_file": str(top3_summary_path.name),
     }
     with open(group_dir / "meta.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
-    print(f"Group investigation results saved to {output_path}")
+    print(f"Group full results saved to {full_results_path}")
+    print(f"Group top3 summary saved to {top3_summary_path}")
+    print(f"Compatible result snapshot saved to {output_path}")
 
 
 if __name__ == "__main__":
