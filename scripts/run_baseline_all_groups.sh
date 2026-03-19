@@ -21,6 +21,11 @@ HORIZON="${HORIZON:-1}"
 CONTEXT_LENGTHS="${CONTEXT_LENGTHS:-30}"
 TEST_DAYS="${TEST_DAYS:-120}"
 SAMPLE_SIZE="${SAMPLE_SIZE:-20}"
+RECENT_WINDOWS="${RECENT_WINDOWS:-20,40,60}"
+MAX_GROUPS="${MAX_GROUPS:-0}"
+TRAIN_END="${TRAIN_END:-2025-12-31}"
+TEST_START="${TEST_START:-2026-01-01}"
+TEST_END="${TEST_END:-2026-03-10}"
 EXCLUDE_FILE="data/tasks/previously_evaluated_symbols.txt"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -45,7 +50,11 @@ sys.path.insert(0, str(src))
 from timesfm_cn_forecast.universe.storage import list_all_symbols
 duckdb_path = os.environ.get("INDEX_DUCKDB") or str(root / "data" / "index_market.duckdb")
 df = list_all_symbols(duckdb_path)
-print(" ".join(df["index_symbol"].tolist()))
+groups = df["index_symbol"].tolist()
+max_groups = int(os.environ.get("MAX_GROUPS", "0"))
+if max_groups > 0:
+    groups = groups[:max_groups]
+print(" ".join(groups))
 PY
 )
 
@@ -58,6 +67,10 @@ for group in $GROUP_LIST; do
     --horizon "${HORIZON}" \
     --context-lengths "${CONTEXT_LENGTHS}" \
     --test-days "${TEST_DAYS}" \
+    --train-end "${TRAIN_END}" \
+    --test-start "${TEST_START}" \
+    --test-end "${TEST_END}" \
+    --rolling-windows "${RECENT_WINDOWS}" \
     --sample-size "${SAMPLE_SIZE}" \
     --exclude-file "${EXCLUDE_FILE}" \
     --output-dir "${OUTPUT_DIR}"

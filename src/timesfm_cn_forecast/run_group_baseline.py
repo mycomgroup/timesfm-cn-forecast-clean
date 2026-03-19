@@ -31,6 +31,10 @@ def main() -> None:
     parser.add_argument("--min-days", type=int, default=100, help="Minimum history days")
     parser.add_argument("--start", type=str, default="2021-01-01")
     parser.add_argument("--end", type=str, default=None)
+    parser.add_argument("--train-end", type=str, default=None)
+    parser.add_argument("--test-start", type=str, default=None)
+    parser.add_argument("--test-end", type=str, default=None)
+    parser.add_argument("--rolling-windows", type=str, default="20,40,60")
     parser.add_argument("--output-dir", type=str, default="data/baseline_results")
     parser.add_argument("--exclude-file", type=str, default=None, help="Path to txt file of symbols to exclude")
     parser.add_argument("--sample-size", type=int, default=10, help="Number of stocks to sample per group for eval")
@@ -86,6 +90,10 @@ def main() -> None:
                 adapter_path=None, # ZERO SHOT
                 input_csv=None,
                 duckdb_path=args.market_duckdb,
+                train_end_date=args.train_end,
+                test_start_date=args.test_start,
+                test_end_date=args.test_end,
+                rolling_windows=rolling_windows,
             )
             if stats_df is None or stats_df.empty:
                 results.append({"symbol": symbol, "status": "empty"})
@@ -109,9 +117,13 @@ def main() -> None:
     df["zero_shot"] = True
     df["test_days"] = args.test_days
     
-    # Calculate group average HitRate for easy comparison
+    # Calculate group-level summary for quick comparison
     ok_df = df[df["status"] == "ok"]
     avg_hitrate = ok_df["hitrate"].mean() if not ok_df.empty else 0.0
+    avg_avg_ret = ok_df["avg_ret"].mean() if not ok_df.empty and "avg_ret" in ok_df.columns else 0.0
+    avg_cum_ret = ok_df["cum_ret"].mean() if not ok_df.empty and "cum_ret" in ok_df.columns else 0.0
+    avg_profit_factor = ok_df["profit_factor"].replace([float("inf")], pd.NA).dropna().mean() if not ok_df.empty and "profit_factor" in ok_df.columns else 0.0
+    avg_recent20 = ok_df["recent20_avg_ret"].mean() if not ok_df.empty and "recent20_avg_ret" in ok_df.columns else 0.0
     
     filename = f"baseline_h{args.horizon}_cl{args.context_lengths}_ss{args.sample_size}.csv"
     output_path = group_dir / filename
@@ -119,7 +131,12 @@ def main() -> None:
     
     print(f"\n>>> GROUP [{args.group}] BASELINE RESULTS <<<")
     print(f"Average Hit Rate (last {args.test_days} days): {avg_hitrate:.2f}%")
+    print(f"Average AvgRet: {avg_avg_ret:.4f}%")
+    print(f"Average CumRet: {avg_cum_ret:.4f}%")
+    print(f"Average ProfitFactor: {avg_profit_factor:.4f}")
+    print(f"Average Recent20 AvgRet: {avg_recent20:.4f}%")
     print(f"Detailed symbol metrics saved to {output_path}\n")
 
 if __name__ == "__main__":
     main()
+    rolling_windows = [int(x.strip()) for x in args.rolling_windows.split(",") if x.strip()]

@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # Scripts to run evaluation on a single stock using local providers and adapter training
-# Usage: bash scripts/run_single_stock_eval.sh <symbol> <train_days> [horizon] [feature_set] [test_days]
+# Usage: bash scripts/run_single_stock_eval.sh <symbol> <train_days> [horizon] [feature_set] [test_days] [train_end] [test_start] [test_end]
 # Example: bash scripts/run_single_stock_eval.sh 002594 60
 
 cd "$(dirname "$0")/.."
 
 SYMBOL="${1:-}"
 if [ -z "$SYMBOL" ]; then
-  echo "Usage: $0 <symbol> [train_days] [horizon] [feature_set] [test_days]"
+  echo "Usage: $0 <symbol> [train_days] [horizon] [feature_set] [test_days] [train_end] [test_start] [test_end]"
   echo "Example: $0 002594 60"
   exit 1
 fi
@@ -19,6 +19,9 @@ TRAIN_DAYS="${2:-60}"
 HORIZON="${3:-1}"
 FEATURE_SET="${4:-full}"
 TEST_DAYS="${5:-20}"
+TRAIN_END="${6:-2025-12-31}"
+TEST_START="${7:-2026-01-01}"
+TEST_END="${8:-2026-03-10}"
 
 # Ensure anaconda python is in PATH and PYTHONPATH is set
 export PATH=/opt/anaconda3/bin:$PATH
@@ -51,6 +54,7 @@ python -m timesfm_cn_forecast.finetuning \
   --data-path "${HISTORY_CSV}" \
   --output-path "${ADAPTER_PATH}" \
   --train-days "${TRAIN_DAYS}" \
+  --train-end "${TRAIN_END}" \
   --horizon-len "${HORIZON}" \
   --feature-set "${FEATURE_SET}"
 
@@ -60,6 +64,9 @@ python -m timesfm_cn_forecast.backtest \
   --provider local \
   --input-csv "${HISTORY_CSV}" \
   --test-days "${TEST_DAYS}" \
+  --train-end "${TRAIN_END}" \
+  --test-start "${TEST_START}" \
+  --test-end "${TEST_END}" \
   --horizon "${HORIZON}" \
   --adapter "${ADAPTER_PATH}" > "${EVAL_LOG}" 2>&1
 
