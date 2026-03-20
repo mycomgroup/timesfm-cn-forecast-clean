@@ -6,6 +6,8 @@ set -euo pipefail
 # Example: bash scripts/run_single_stock_predict.sh 002594 data/adapters/single_stock/002594/adapter_20260312.pth 1 60
 
 cd "$(dirname "$0")/.."
+source scripts/_env.sh
+setup_project_env
 
 SYMBOL="${1:-}"
 ADAPTER="${2:-}"
@@ -27,11 +29,8 @@ OUTPUT_DIR="${TASK_DIR}/predictions"
 
 mkdir -p "${OUTPUT_DIR}"
 
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
-
 echo "=== Running Single Stock Prediction for ${SYMBOL} ==="
-python -m timesfm_cn_forecast.cli \
+"${PYTHON_BIN}" -m timesfm_cn_forecast.cli \
   --provider "akshare" \
   --symbol "${SYMBOL}" \
   --adapter "${ADAPTER}" \

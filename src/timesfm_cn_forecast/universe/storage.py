@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS index_constituents (
 """
 
 
-def _get_con(duckdb_path: str):
-    """获取 DuckDB 连接（读写模式）。"""
+def _get_con(duckdb_path: str, read_only: bool = False):
+    """获取 DuckDB 连接。"""
     try:
         import duckdb
     except ImportError as e:
@@ -36,26 +36,17 @@ def _get_con(duckdb_path: str):
     path = Path(duckdb_path)
     if not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-    return duckdb.connect(str(path))
+    return duckdb.connect(str(path), read_only=read_only)
 
 
 def upsert_constituents(df: pd.DataFrame, duckdb_path: str) -> int:
     """
     将成份股 DataFrame 以 Upsert 方式写入 DuckDB。
-
-    先删除同 index_symbol 的旧记录，再插入新记录（幂等操作）。
-
-    Args:
-        df: 由 fetcher.fetch_constituents 返回的 DataFrame。
-        duckdb_path: index_market.duckdb 路径。
-
-    Returns:
-        写入的行数。
     """
     if df.empty:
         return 0
 
-    con = _get_con(duckdb_path)
+    con = _get_con(duckdb_path, read_only=False)
     try:
         con.execute(_CREATE_TABLE_SQL)
 
@@ -64,7 +55,6 @@ def upsert_constituents(df: pd.DataFrame, duckdb_path: str) -> int:
             con.execute(
                 "DELETE FROM index_constituents WHERE index_symbol = ?", [sym]
             )
-            # 注册临时视图，通过 DuckDB 的 Python API 直接插入 DataFrame
             con.register("_tmp_constituents", group_df)
             con.execute(
                 "INSERT INTO index_constituents SELECT * FROM _tmp_constituents"
@@ -81,15 +71,8 @@ def upsert_constituents(df: pd.DataFrame, duckdb_path: str) -> int:
 def query_constituents(index_symbol: str, duckdb_path: str) -> list[str]:
     """
     从 DuckDB 查询指定指数的成份股代码列表。
-
-    Args:
-        index_symbol: 逻辑指数代号，如 'CYBZ'。
-        duckdb_path: index_market.duckdb 路径。
-
-    Returns:
-        股票代码列表（6位纯数字）。
     """
-    con = _get_con(duckdb_path)
+    con = _get_con(duckdb_path, read_only=True)
     try:
         result = con.execute(
             "SELECT code FROM index_constituents WHERE index_symbol = ? ORDER BY code",
@@ -97,7 +80,7 @@ def query_constituents(index_symbol: str, duckdb_path: str) -> list[str]:
         ).fetchall()
         return [row[0] for row in result]
     except Exception as err:
-        logger.warning(f"查询失败（表可能尚未创建）: {err}")
+        logger.warning(f"查询失败: {err}")
         return []
     finally:
         con.close()
@@ -105,7 +88,7 @@ def query_constituents(index_symbol: str, duckdb_path: str) -> list[str]:
 
 def get_index_constituents(index_symbol: str, duckdb_path: str) -> pd.DataFrame:
     """返回指定分组的完整成份股快照。"""
-    con = _get_con(duckdb_path)
+    con = _get_con(duckdb_path, read_only=True)
     try:
         return con.execute(
             """
@@ -117,7 +100,7 @@ def get_index_constituents(index_symbol: str, duckdb_path: str) -> pd.DataFrame:
             [index_symbol],
         ).fetchdf()
     except Exception as err:
-        logger.warning(f"读取分组快照失败（表可能尚未创建）: {err}")
+        logger.warning(f"读取分组快照失败: {err}")
         return pd.DataFrame(
             columns=["index_symbol", "akshare_code", "code", "name", "in_date", "fetched_at"]
         )
@@ -128,11 +111,8 @@ def get_index_constituents(index_symbol: str, duckdb_path: str) -> pd.DataFrame:
 def list_all_symbols(duckdb_path: str) -> pd.DataFrame:
     """
     列出 DuckDB 中已存储的所有指数及其成份股数量。
-
-    Returns:
-        DataFrame with columns: [index_symbol, count, fetched_at]
     """
-    con = _get_con(duckdb_path)
+    con = _get_con(duckdb_path, read_only=True)
     try:
         return con.execute("""
             SELECT index_symbol, COUNT(*) as count, MAX(fetched_at) as fetched_at

@@ -11,8 +11,8 @@ set -euo pipefail
 # ==============================================================================
 
 cd "$(dirname "$0")/.."
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
+source scripts/_env.sh
+setup_project_env
 
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"
 INDEX_DUCKDB="${INDEX_DUCKDB:-data/index_market.duckdb}"
@@ -60,7 +60,7 @@ for i in "${!GROUP_LIST[@]}"; do
   echo ""
   echo ">>> [${COUNT}/${TOTAL}] 攻坚板块: ${group} ..."
 
-  /opt/anaconda3/bin/python -u -m timesfm_cn_forecast.run_group_eval \
+  "${PYTHON_BIN}" -u -m timesfm_cn_forecast.run_group_eval \
     --group "${group}" \
     --market-duckdb "${MARKET_DUCKDB}" \
     --index-duckdb "${INDEX_DUCKDB}" \
@@ -83,7 +83,7 @@ echo "✅ 精选实验全部完成！"
 echo "结果保存至: ${OUTPUT_DIR}"
 echo ""
 echo "📊 快速汇总: "
-python -u -c "
+"${PYTHON_BIN}" -u -c "
 import pandas as pd
 from pathlib import Path
 results = []

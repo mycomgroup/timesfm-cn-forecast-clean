@@ -114,7 +114,7 @@ for group in "${GROUP_ARR[@]}"; do
     --rolling-windows "${ROLLING_WINDOWS}" \
     --must-include-symbol "${SEED}" \
     --output-dir "${OUTPUT_DIR}" \
-    "${EXTRA_ARGS[@]}"
+    ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 done
 
 SUMMARY_DIR="${TASK_DIR}/summary"

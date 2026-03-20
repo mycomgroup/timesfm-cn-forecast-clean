@@ -9,8 +9,8 @@ set -euo pipefail
 # 3. 生成详细报告
 
 cd "$(dirname "$0")/.."
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
+source scripts/_env.sh
+setup_project_env
 
 # 数据源路径
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"
@@ -29,7 +29,7 @@ mkdir -p "${OUTPUT_DIR}"
 echo "=========================================================================="
 echo "🔄 正在刷新 DuckDB 板块数据源..."
 # 用脚本内联 Python 运行拉取任务，确保新增的板块全部存在于本地数据库中
-python - <<'PY'
+"${PYTHON_BIN}" - <<'PY'
 import sys
 from pathlib import Path
 root = Path.cwd()
@@ -62,7 +62,7 @@ echo "==========================================================================
 
 # 读取 DuckDB 里更新过后的所有板块名
 GROUP_LIST=$(
-  INDEX_DUCKDB="${INDEX_DUCKDB}" python - <<'PY'
+  INDEX_DUCKDB="${INDEX_DUCKDB}" "${PYTHON_BIN}" - <<'PY'
 import os
 import sys
 from pathlib import Path
@@ -78,7 +78,7 @@ PY
 
 for group in $GROUP_LIST; do
   echo ">>> 开始评估板块: ${group}"
-  python -m timesfm_cn_forecast.run_group_baseline \
+  "${PYTHON_BIN}" -m timesfm_cn_forecast.run_group_baseline \
     --group "${group}" \
     --market-duckdb "${MARKET_DUCKDB}" \
     --index-duckdb "${INDEX_DUCKDB}" \

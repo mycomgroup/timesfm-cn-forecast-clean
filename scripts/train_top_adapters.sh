@@ -13,8 +13,8 @@ set -euo pipefail
 # - Feature Set: full (OHLCV + Technical indicators)
 
 cd "$(dirname "$0")/.."
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
+source scripts/_env.sh
+setup_project_env
 
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"
 INDEX_DUCKDB="${INDEX_DUCKDB:-data/index_market.duckdb}"
@@ -41,7 +41,7 @@ echo "==========================================================================
 
 for group in "${TOP_GROUPS[@]}"; do
   echo ">>> [Finetune] 正在强化训练板块: ${group} ..."
-  python -m timesfm_cn_forecast.run_group_eval \
+  "${PYTHON_BIN}" -m timesfm_cn_forecast.run_group_eval \
     --group "${group}" \
     --market-duckdb "${MARKET_DUCKDB}" \
     --index-duckdb "${INDEX_DUCKDB}" \

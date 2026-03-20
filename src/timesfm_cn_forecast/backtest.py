@@ -34,9 +34,12 @@ def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
 def calculate_trading_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
+    y_baseline: np.ndarray,
 ) -> Dict[str, float]:
-    """计算交易层指标。"""
-    if len(y_true) <= 1:
+    """计算交易层指标。
+    [P2 Fix] 显式引入 y_baseline 以支持 horizon > 1 的正确计算。
+    """
+    if len(y_true) == 0:
         return {
             "HitRate": 0.0,
             "AvgRet": 0.0,
@@ -56,14 +59,14 @@ def calculate_trading_metrics(
         }
 
     eps = 1e-8
-    diff_true = y_true[1:] - y_true[:-1]
-    diff_pred = y_pred[1:] - y_true[:-1]
+    diff_true = y_true - y_baseline
+    diff_pred = y_pred - y_baseline
 
     true_dir = np.where(np.abs(diff_true) > eps, np.sign(diff_true), 0)
     pred_dir = np.where(np.abs(diff_pred) > eps, np.sign(diff_pred), 0)
     hit_rate = float(np.mean(true_dir == pred_dir) * 100) if len(true_dir) > 0 else 0.0
 
-    returns = np.divide(diff_true, y_true[:-1], out=np.zeros_like(diff_true), where=np.abs(y_true[:-1]) > eps)
+    returns = np.divide(diff_true, y_baseline, out=np.zeros_like(diff_true), where=np.abs(y_baseline) > eps)
     signals = (diff_pred > eps).astype(float)
     strategy_returns = signals * returns
 
@@ -146,22 +149,23 @@ def calculate_trading_metrics(
 def summarize_recent_windows(
     y_true: np.ndarray,
     y_pred: np.ndarray,
+    y_baseline: np.ndarray,
     rolling_windows: List[int],
 ) -> Dict[str, float]:
     """统计最近窗口交易指标。"""
     eps = 1e-8
     out: Dict[str, float] = {}
 
-    if len(y_true) <= 1:
+    if len(y_true) == 0:
         for window in rolling_windows:
             out[f"Recent{window}AvgRet"] = 0.0
             out[f"Recent{window}CumRet"] = 0.0
             out[f"Recent{window}HitRate"] = 0.0
         return out
 
-    diff_true = y_true[1:] - y_true[:-1]
-    diff_pred = y_pred[1:] - y_true[:-1]
-    returns = np.divide(diff_true, y_true[:-1], out=np.zeros_like(diff_true), where=np.abs(y_true[:-1]) > eps)
+    diff_true = y_true - y_baseline
+    diff_pred = y_pred - y_baseline
+    returns = np.divide(diff_true, y_baseline, out=np.zeros_like(diff_true), where=np.abs(y_baseline) > eps)
     signals = (diff_pred > eps).astype(float)
     strategy_returns = signals * returns
     hits = (np.sign(diff_true) == np.sign(diff_pred)).astype(float)
@@ -179,6 +183,7 @@ def summarize_recent_windows(
 def calculate_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
+    y_baseline: np.ndarray,
     rolling_windows: List[int],
 ) -> Dict[str, float]:
     """计算预测层 + 交易层综合指标。"""
@@ -195,8 +200,8 @@ def calculate_metrics(
         "RMSE": rmse,
         "MAPE": mape,
     }
-    result.update(calculate_trading_metrics(y_true, y_pred))
-    result.update(summarize_recent_windows(y_true, y_pred, rolling_windows))
+    result.update(calculate_trading_metrics(y_true, y_pred, y_baseline))
+    result.update(summarize_recent_windows(y_true, y_pred, y_baseline, rolling_windows))
     return result
 
 
@@ -273,6 +278,7 @@ def run_backtest(
         errors = []
         preds = []
         actuals = []
+        baselines = []
 
         for i in range(clen, len(prices) - horizon + 1):
             pred_date = dates[i]
@@ -294,12 +300,14 @@ def run_backtest(
 
             preds.append(pred_val)
             actuals.append(target)
+            baselines.append(float(prices[i - 1]))
             errors.append(abs(pred_val - target))
 
-        if len(actuals) < 2:
-            continue
+        y_true = np.asarray(actuals, dtype=np.float32)
+        y_pred = np.asarray(preds, dtype=np.float32)
+        y_base = np.asarray(baselines, dtype=np.float32)
 
-        metrics = calculate_metrics(np.asarray(actuals, dtype=np.float32), np.asarray(preds, dtype=np.float32), rolling_windows)
+        metrics = calculate_metrics(y_true, y_pred, y_base, rolling_windows)
         metrics["ContextLen"] = clen
         metrics["EvalSamples"] = len(actuals)
         all_stats.append(metrics)

@@ -265,28 +265,39 @@ INDEX_MAP: dict[str, dict] = {
 }
 
 try:
-    # 动态追加更多热门行业
-    _extra_inds = [
-        "股份制银行III", "房地产开发III", "电池化学品III", "显示器件III", "火电III", 
-        "生猪养殖III", "通信网络设备及器件III", "证券III", "中药III", "风力发电III",
-        "光伏辅材III", "电网自动化III", "医疗设备III", "工程机械整机III", "白色家电III"
-    ]
-    for _cat in _extra_inds:
-        _key = f"ind_{_cat.replace('III', '')}"
-        if _key not in INDEX_MAP:
-            INDEX_MAP[_key] = {"source": "industry_csv", "category": _cat, "prefix_filter": [], "description": f"申万行业：{_cat}"}
+    # 自动加载所有申万行业（从 industry_category.csv）
+    _ind_path = Path(_DEFAULT_INDUSTRY_CSV)
+    if _ind_path.exists():
+        _df_ind = pd.read_csv(_ind_path)
+        _all_inds = _df_ind["category"].dropna().unique()
+        for _cat in _all_inds:
+            _clean_cat = str(_cat).replace("III", "").replace("II", "").replace("I", "").strip()
+            _key = f"ind_{_clean_cat.replace(' ', '_')}"
+            if _key not in INDEX_MAP:
+                INDEX_MAP[_key] = {
+                    "source": "industry_csv",
+                    "category": _cat,
+                    "prefix_filter": [],
+                    "description": f"申万行业：{_cat}",
+                }
 
-    # 动态追加热门概念
+    # 动态追加一些重点概念（由用户手动指定或脚本发现，暂保持原样）
     _extra_cons = [
         "储能", "机器人概念", "工业母机", "量子通信", "脑机接口", "飞行汽车(eVTOL)", 
         "虚拟现实", "跨境电商", "央企国企改革", "高股息100", "超级品牌", "工业4.0"
     ]
     for _cat in _extra_cons:
-        _key = f"con_{_cat.replace('(eVTOL)', '')}"
+        _clean_cat = str(_cat).replace("(eVTOL)", "").strip()
+        _key = f"con_{_clean_cat.replace(' ', '_')}"
         if _key not in INDEX_MAP:
-            INDEX_MAP[_key] = {"source": "concept_csv", "category": _cat, "prefix_filter": [], "description": f"概念：{_cat}"}
+            INDEX_MAP[_key] = {
+                "source": "concept_csv",
+                "category": _cat,
+                "prefix_filter": [],
+                "description": f"概念：{_cat}"
+            }
 except Exception as e:
-    pass
+    logger.warning(f"Failed to dynamically populate INDEX_MAP: {e}")
 
 
 # ---------------------------------------------------------------------------

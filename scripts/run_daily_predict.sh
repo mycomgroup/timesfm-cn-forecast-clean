@@ -6,6 +6,8 @@ set -euo pipefail
 # Example: bash scripts/run_daily_predict.sh small_fengzhi data/research/small_fengzhi/adapter.pth 1 60
 
 cd "$(dirname "$0")/.."
+source scripts/_env.sh
+setup_project_env
 
 GROUP="${1:-}"
 ADAPTER="${2:-}"
@@ -28,11 +30,8 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
-
 echo "=== Running Daily Prediction for ${GROUP} ==="
-python -m timesfm_cn_forecast.cli \
+"${PYTHON_BIN}" -m timesfm_cn_forecast.cli \
   --provider "duckdb" \
   --group "${GROUP}" \
   --adapter "${ADAPTER}" \

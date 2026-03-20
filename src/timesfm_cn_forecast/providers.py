@@ -347,32 +347,38 @@ def _standardize_output(
     df: pd.DataFrame, date_col: str, val_col: str, symbol: str | None, extra_cols: list[str] | None = None
 ) -> pd.DataFrame:
     # 转换为日期格式并重命名列
+    df = df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
     
-    rename_map = {date_col: "date", val_col: "value"}
-    # 如果是 K 线模式，也尝试标准化 extra_cols 的名称
+    # [P0 Fix] Use more robust column standardization to avoid KeyError or index corruption
+    if val_col in df.columns and val_col != "value":
+        df = df.assign(value=df[val_col])
+    
+    # Handle extra OHLCV columns
     std_map = {
         "开盘": "open", "最高": "high", "最低": "low", "成交量": "volume", "vol": "volume", "收盘": "close"
     }
     if extra_cols:
         for col in extra_cols:
-            if col in std_map:
-                rename_map[col] = std_map[col]
+            target = std_map.get(col, col.lower())
+            if col in df.columns and target not in df.columns:
+                df = df.assign(**{target: df[col]})
 
-    df = df.rename(columns=rename_map)
+    # Re-map standard names if they don't exist
+    if "date" not in df.columns:
+        df = df.assign(date=df[date_col])
     
-    # 特殊处理：如果请求了 K 线，确保 open, high, low, close 都在
-    # value 列作为主数值列（对应 TimesFM 输入），close 列作为 K 线展示列
+    # Ensure both 'value' and 'close' exist (TimesFM needs 'value', UI/Legacy needs 'close')
     if "close" not in df.columns and "value" in df.columns:
-        df["close"] = df["value"]
+        df = df.assign(close=df["value"])
     elif "value" not in df.columns and "close" in df.columns:
-        df["value"] = df["close"]
+        df = df.assign(value=df["close"])
     
+    # Final column alignment
     target_cols = ["date", "value", "open", "high", "low", "close", "volume"]
-    # 只保留存在的列
-    target_cols = [c for c in target_cols if c in df.columns]
+    actual_cols = [c for c in target_cols if c in df.columns]
     
-    df = df[target_cols].sort_values("date").reset_index(drop=True)
+    df = df[actual_cols].sort_values("date").reset_index(drop=True)
     return df
 
 

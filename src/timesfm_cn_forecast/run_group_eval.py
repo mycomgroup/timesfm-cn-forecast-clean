@@ -120,6 +120,12 @@ def _build_training_samples(
     all_symbol_data = []
 
     for symbol in symbols:
+        # P0 Fix: Ensure train_end is strictly before test_start if provided
+        if args.test_start and not args.train_end:
+            # Simple day subtraction (assuming YYYY-MM-DD)
+            ts_start = pd.Timestamp(args.test_start)
+            args.train_end = (ts_start - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
         req_end = args.train_end if args.train_end else args.end
         req = DataRequest(
             provider="duckdb",
@@ -302,7 +308,43 @@ def _select_best_context_row(stats_df: pd.DataFrame) -> pd.Series:
     return scored.loc[best_idx]
 
 
-def _summarize_best(stats_df: pd.DataFrame) -> dict[str, float]:
+def _summarize_best(stats_df: pd.DataFrame, preferred_context: int | None = None) -> dict:
+    """选取表现最好的 context 结果作为概要。
+    Note: 如果不提供 preferred_context，则在全部 context 结果中选取 TradeScore 最高者。
+    [P1 Fix] 为避免在测试集上过拟合，建议外部传入优先的 context_len。
+    """
+    if preferred_context is not None:
+        matched = stats_df[stats_df["ContextLen"] == preferred_context]
+        if not matched.empty:
+            row = matched.iloc[0]
+            summary = {
+                "best_context_len": int(row["ContextLen"]),
+                "rmse": float(row["RMSE"]),
+                "hitrate": float(row["HitRate"]),
+                "mae": float(row["MAE"]),
+                "mape": float(row["MAPE"]),
+                "avg_ret": float(row["AvgRet"]),
+                "cum_ret": float(row["CumRet"]),
+                "avg_trade_ret": float(row["AvgTradeRet"]),
+                "avg_win": float(row["AvgWin"]),
+                "avg_loss": float(row["AvgLoss"]),
+                "profit_factor": float(row["ProfitFactor"]),
+                "win_loss_ratio": float(row["WinLossRatio"]),
+                "max_drawdown": float(row["MaxDrawdown"]),
+                "sharpe": float(row["Sharpe"]),
+                "sortino": float(row["Sortino"]),
+                "calmar": float(row["Calmar"]),
+                "volatility": float(row["Volatility"]),
+                "num_trades": float(row["NumTrades"]),
+                "exposure": float(row["Exposure"]),
+                "trade_score_context": float(row.get("_trade_score_ctx", np.nan)),
+            }
+            for window in (20, 40, 60):
+                summary[f"recent{window}_avg_ret"] = float(row.get(f"Recent{window}AvgRet", 0.0))
+                summary[f"recent{window}_cum_ret"] = float(row.get(f"Recent{window}CumRet", 0.0))
+                summary[f"recent{window}_hitrate"] = float(row.get(f"Recent{window}HitRate", 0.0))
+            return summary
+
     row = _select_best_context_row(stats_df)
     summary = {
         "best_context_len": int(row["ContextLen"]),
@@ -440,16 +482,18 @@ def main() -> None:
     base_model = 加载模型(model_dir)
     adapter_path = _train_group_adapter(symbols_for_train, args, group_dir, model=base_model)
 
-    symbols_for_eval = symbols
+    # P2 Fix: Sample from ALREADY FILTERED symbols to ensure consistent data availability
+    symbols_for_eval = symbols_for_train
     must_include = None
     if args.must_include_symbol:
         must_include = str(args.must_include_symbol)
         must_include = "".join(ch for ch in must_include if ch.isdigit()).zfill(6)
 
-    if args.sample_size and args.sample_size < len(symbols):
+    if args.sample_size and args.sample_size < len(symbols_for_eval):
         random.seed(42)
-        symbols_for_eval = random.sample(symbols, args.sample_size)
-        if must_include and must_include in symbols and must_include not in symbols_for_eval:
+        symbols_for_eval = random.sample(symbols_for_eval, args.sample_size)
+        if must_include and must_include in symbols_for_train and must_include not in symbols_for_eval:
+            # If must_include passed min-days filter but was not sampled, force it in.
             symbols_for_eval[0] = must_include
 
     results = []
@@ -475,7 +519,8 @@ def main() -> None:
                 results.append({"symbol": symbol, "status": "empty"})
                 continue
 
-            summary = _summarize_best(stats_df)
+            # [P1 Fix] Pass current args.context_len as preferred_context to avoid test-set selection bias
+            summary = _summarize_best(stats_df, preferred_context=args.context_len)
             results.append({"symbol": symbol, **summary, "status": "ok"})
         except Exception as exc:
             results.append({"symbol": symbol, "status": "error", "error": str(exc)})
@@ -494,17 +539,22 @@ def main() -> None:
     df["test_end"] = args.test_end
     df = _attach_group_trade_fields(df)
 
+    # [P1 Fix] Standardize authoritative filename to results.csv
+    authoritative_results_path = group_dir / "results.csv"
     full_results_path = group_dir / "group_full_results.csv"
     top3_summary_path = group_dir / "group_top3_summary.csv"
+
+    df.to_csv(authoritative_results_path, index=False)
     df.to_csv(full_results_path, index=False)
     _extract_top3(df).to_csv(top3_summary_path, index=False)
 
+    # Maintain snapshot for backward compatibility if needed, but primary is results.csv
     filename = (
         f"results_{args.feature_set}_td{args.train_days}_h{args.horizon}_"
         f"cl{args.context_len}_ss{args.sample_size if args.sample_size else 'all'}.csv"
     )
-    output_path = group_dir / filename
-    df.to_csv(output_path, index=False)
+    snapshot_path = group_dir / filename
+    df.to_csv(snapshot_path, index=False)
 
     meta = {
         "group": args.group,
@@ -526,7 +576,7 @@ def main() -> None:
 
     print(f"Group full results saved to {full_results_path}")
     print(f"Group top3 summary saved to {top3_summary_path}")
-    print(f"Compatible result snapshot saved to {output_path}")
+    print(f"Compatible result snapshot saved to {snapshot_path}")
 
 
 if __name__ == "__main__":

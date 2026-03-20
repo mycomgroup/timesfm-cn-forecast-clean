@@ -9,6 +9,12 @@ from pathlib import Path
 import pandas as pd
 
 
+def _tail_text(text: str | None, limit: int = 2000) -> str:
+    if not text:
+        return ""
+    return text[-limit:]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run A/B research in batch")
     parser.add_argument("--groups-file", type=str, required=True, help="CSV with column group")
@@ -20,6 +26,7 @@ def main() -> None:
     parser.add_argument("--test-end", type=str, default="2026-03-10")
     parser.add_argument("--sample-size", type=int, default=10)
     parser.add_argument("--model-type", type=str, default="ridge", choices=["lstsq", "ridge", "huber"])
+    parser.add_argument("--timeout-seconds", type=int, default=7200, help="Per-group subprocess timeout")
     args = parser.parse_args()
 
     groups = pd.read_csv(args.groups_file)["group"].astype(str).tolist()
@@ -40,8 +47,42 @@ def main() -> None:
             "--model-type", args.model_type,
             "--output-dir", str(out_dir),
         ]
-        ret = subprocess.run(cmd, capture_output=True, text=True)
-        rows.append({"group": group, "status": "ok" if ret.returncode == 0 else "error", "message": ret.stderr[-2000:]})
+        status = "ok"
+        message = ""
+        try:
+            ret = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=args.timeout_seconds,
+            )
+            if ret.returncode != 0:
+                status = "error"
+                message = "\n".join(
+                    part
+                    for part in [
+                        f"returncode={ret.returncode}",
+                        _tail_text(ret.stderr),
+                        _tail_text(ret.stdout),
+                    ]
+                    if part
+                )
+        except subprocess.TimeoutExpired as exc:
+            status = "timeout"
+            message = "\n".join(
+                part
+                for part in [
+                    f"timeout_seconds={args.timeout_seconds}",
+                    _tail_text(exc.stderr if isinstance(exc.stderr, str) else None),
+                    _tail_text(exc.stdout if isinstance(exc.stdout, str) else None),
+                ]
+                if part
+            )
+        except Exception as exc:  # pragma: no cover - defensive guard for batch stability
+            status = "error"
+            message = f"{type(exc).__name__}: {exc}"
+
+        rows.append({"group": group, "status": status, "message": message})
 
     pd.DataFrame(rows).to_csv(out_dir / "ab_summary.csv", index=False)
     print(f"Saved: {out_dir / 'ab_summary.csv'}")

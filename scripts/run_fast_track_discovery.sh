@@ -8,8 +8,8 @@ set -euo pipefail
 # 3. 缩减训练时间窗口，用最小数据量验证因子的预测能力。
 
 cd "$(dirname "$0")/.."
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
+source scripts/_env.sh
+setup_project_env
 
 # 1. 挑选非常有代表性、波动性强的三个组
 # 比如：电池（新能源代表），半导体（科技代表），银行（稳定代表）

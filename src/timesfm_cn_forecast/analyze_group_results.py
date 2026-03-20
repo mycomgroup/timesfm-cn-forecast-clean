@@ -28,8 +28,15 @@ def _summarize_group(group: str, df: pd.DataFrame) -> dict[str, float]:
             "rmse_mean": np.nan,
         }
 
-    hitrate = df_ok["hitrate"].astype(float)
-    rmse = df_ok["rmse"].astype(float)
+    # [P1 Fix] Robust column lookup for both old (uppercase) and new (lowercase) formats
+    def _get_col(name: str):
+        for c in df_ok.columns:
+            if c.lower() == name.lower():
+                return df_ok[c].astype(float)
+        return pd.Series(np.nan, index=df_ok.index)
+
+    hitrate = _get_col("hitrate")
+    rmse = _get_col("rmse")
 
     return {
         "group": group,

@@ -62,8 +62,12 @@ def _compute_trade_score(df: pd.DataFrame) -> pd.Series:
 def _pick_result_files(input_dir: Path) -> list[Path]:
     by_parent: dict[Path, Path] = {}
 
-    for path in input_dir.rglob("group_full_results.csv"):
-        by_parent[path.parent] = path
+    # 优先顺序: results.csv > group_full_results.csv > results_*.csv
+    for name in ["results.csv", "group_full_results.csv"]:
+        for path in input_dir.rglob(name):
+            if path.parent not in by_parent:
+                by_parent[path.parent] = path
+
     for path in sorted(input_dir.rglob("results_*.csv")):
         if path.parent in by_parent:
             continue
@@ -406,8 +410,8 @@ def main() -> None:
     )
     parser.add_argument("--market-duckdb", type=str, default="data/market.duckdb")
     parser.add_argument("--start", type=str, default="2025-01-01")
-    parser.add_argument("--end", type=str, default=None)
-    parser.add_argument("--max-seeds", type=int, default=10)
+    parser.add_argument("--end", type=str, default="2025-12-31", help="截止日期 (P1 Fix: 防泄漏)")
+    parser.add_argument("--max-seeds", type=int, default=15)
     parser.add_argument("--initial-pool-size", type=int, default=50)
     parser.add_argument("--reduced-pool-size", type=int, default=20)
     parser.add_argument("--final-size", type=int, default=8)

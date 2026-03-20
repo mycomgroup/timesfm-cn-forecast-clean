@@ -27,7 +27,9 @@ class LinearAdapter:
         self.weights = weights
 
     def apply(self, features: np.ndarray) -> np.ndarray:
-        scaled_features = (features - self.weights.mean) / self.weights.scale
+        # 增加 epsilon 防止除零溢出
+        scale = self.weights.scale + 1e-9
+        scaled_features = (features - self.weights.mean) / scale
         ones = np.ones((scaled_features.shape[0], 1), dtype=np.float32)
         x_aug = np.concatenate([scaled_features, ones], axis=1)
         residuals = x_aug @ self.weights.coef
@@ -48,6 +50,9 @@ def train_linear_adapter(
     sample_weights: Optional[np.ndarray] = None,
 ) -> AdapterWeights:
     """训练线性残差适配器。"""
+    # 预处理输入，确保无 NaN/Inf
+    train_X = np.nan_to_num(train_X, nan=0.0, posinf=0.0, neginf=0.0)
+    
     scaler = StandardScaler()
     x_scaled = scaler.fit_transform(train_X)
     residuals = train_y - train_base

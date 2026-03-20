@@ -12,8 +12,8 @@ set -euo pipefail
 # ==============================================================================
 
 cd "$(dirname "$0")/.."
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
+source scripts/_env.sh
+setup_project_env
 
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"
 INDEX_DUCKDB="${INDEX_DUCKDB:-data/index_market.duckdb}"
@@ -30,7 +30,7 @@ OUTPUT_DIR="data/tasks/massive_matrix_${TIMESTAMP}"
 mkdir -p "${OUTPUT_DIR}"
 
 # 动态获取所有可用的组名
-GROUP_LIST=$(PYTHONPATH=src python -c "from timesfm_cn_forecast.universe.fetcher import INDEX_MAP; print(' '.join(INDEX_MAP.keys()))")
+GROUP_LIST=$("${PYTHON_BIN}" -c "from timesfm_cn_forecast.universe.fetcher import INDEX_MAP; print(' '.join(INDEX_MAP.keys()))")
 
 echo "=========================================================================="
 echo "🌟 开启全市场‘地毯式’强化学习实验矩阵 (V2)"
@@ -51,7 +51,7 @@ for group in $GROUP_LIST; do
   
   # 运行强化训练 + 回测
   # 我们在这里加上一个 --start 参数限制，保证数据范围一致性 (如果需要)
-  python -u -m timesfm_cn_forecast.run_group_eval \
+  "${PYTHON_BIN}" -u -m timesfm_cn_forecast.run_group_eval \
     --group "${group}" \
     --market-duckdb "${MARKET_DUCKDB}" \
     --index-duckdb "${INDEX_DUCKDB}" \

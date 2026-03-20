@@ -8,8 +8,8 @@ set -euo pipefail
 # ==============================================================================
 
 cd "$(dirname "$0")/.."
-export PYTHONPATH=src
-export PATH=/opt/anaconda3/bin:$PATH
+source scripts/_env.sh
+setup_project_env
 
 MARKET_DUCKDB="data/market.duckdb"
 INDEX_DUCKDB="data/index_market.duckdb"
@@ -37,7 +37,7 @@ echo "==========================================================================
 
 for group in "${GROUP_LIST[@]}"; do
   echo ">>> 正在处理共振组: ${group} ..."
-  python -u -m timesfm_cn_forecast.run_group_eval \
+  "${PYTHON_BIN}" -u -m timesfm_cn_forecast.run_group_eval \
     --group "${group}" \
     --market-duckdb "${MARKET_DUCKDB}" \
     --index-duckdb "${INDEX_DUCKDB}" \

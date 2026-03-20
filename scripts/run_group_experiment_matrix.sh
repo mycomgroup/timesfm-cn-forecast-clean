@@ -1,10 +1,12 @@
-#!/选/bin/bash
+#!/bin/bash
 set -euo pipefail
 
 # 实验矩阵自动化脚本
 # 针对 small_fengzhi 股票池执行 16 组排列组合实验
 
 cd "$(dirname "$0")/.."
+source scripts/_env.sh
+setup_project_env
 
 GROUP="${GROUP:-small}"
 FEATURE_SETS=("basic" "technical" "structural" "full")
@@ -19,9 +21,6 @@ SCENARIOS=(
 
 # 随机采样验证数量 (提升实验速度)
 SAMPLE_SIZE="${SAMPLE_SIZE:-100}"
-
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 ROOT_OUTPUT_DIR="data/tasks/matrix_${GROUP}_${TIMESTAMP}"
@@ -48,7 +47,6 @@ for FS in "${FEATURE_SETS[@]}"; do
         
         echo "场景 ${TASK_NAME} 完成。"
     done
-done
 done
 
 echo "----------------------------------------------------------------"

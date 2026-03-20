@@ -37,43 +37,77 @@ MIN_DAYS="${MIN_DAYS:-1000}"
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
 ANALYZE="${ANALYZE:-1}"
 
-GROUPS=$(
+if ! GROUP_LIST="$(
   INDEX_DUCKDB="${INDEX_DUCKDB}" "${PYTHON_BIN}" - <<'PY'
 import os
 import sys
 from pathlib import Path
+
 root = Path.cwd()
 src = root / "src"
 sys.path.insert(0, str(src))
+
 from timesfm_cn_forecast.universe.storage import list_all_symbols
+
 duckdb_path = os.environ.get("INDEX_DUCKDB") or str(root / "data" / "index_market.duckdb")
 df = list_all_symbols(duckdb_path)
-print(" ".join(df["index_symbol"].tolist()))
+print("\n".join(df["index_symbol"].astype(str).tolist()))
 PY
-)
+)"; then
+  echo "ERROR: Failed to discover groups from ${INDEX_DUCKDB}." >&2
+  exit 1
+fi
 
-for group in $GROUPS; do
+# 转换成数组，避免空格分词问题
+GROUP_ARRAY=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && GROUP_ARRAY+=("$line")
+done <<< "$GROUP_LIST"
+
+TOTAL_GROUPS=${#GROUP_ARRAY[@]}
+if [ "${TOTAL_GROUPS}" -eq 0 ]; then
+  echo "ERROR: No groups found in ${INDEX_DUCKDB}." >&2
+  exit 1
+fi
+echo ">>> Found ${TOTAL_GROUPS} groups to evaluate."
+
+for i in "${!GROUP_ARRAY[@]}"; do
+  group="${GROUP_ARRAY[$i]}"
+  IDX=$((i + 1))
+  
   if [ "$SKIP_EXISTING" = "1" ] && [ -f "${OUTPUT_DIR}/${group}/results.csv" ]; then
-    echo "Skipping ${group} (results.csv exists)"
+    echo "[${IDX}/${TOTAL_GROUPS}] Skipping ${group} (results.csv exists)"
     continue
   fi
-  echo "Running group: ${group}"
-  MARKET_DUCKDB="${MARKET_DUCKDB}" \
-  INDEX_DUCKDB="${INDEX_DUCKDB}" \
-  OUTPUT_DIR="${OUTPUT_DIR}" \
-  START_DATE="${START_DATE:-}" \
-  END_DATE="${END_DATE:-}" \
-  CONTEXT_LENGTHS="${CONTEXT_LENGTHS:-}" \
-  bash scripts/run_one_group_eval.sh \
-    "${group}" \
-    "${FEATURE_SET}" \
-    "${TRAIN_DAYS}" \
-    "${HORIZON}" \
-    "${CONTEXT_LEN}" \
-    "${TEST_DAYS}" \
-    "${MIN_DAYS}"
+  
+  echo "[${IDX}/${TOTAL_GROUPS}] Running group: ${group}"
+  if MARKET_DUCKDB="${MARKET_DUCKDB}" \
+    INDEX_DUCKDB="${INDEX_DUCKDB}" \
+    OUTPUT_DIR="${OUTPUT_DIR}" \
+    START_DATE="${START_DATE:-}" \
+    END_DATE="${END_DATE:-}" \
+    TRAIN_END="${TRAIN_END:-}" \
+    TEST_START="${TEST_START:-}" \
+    TEST_END="${TEST_END:-}" \
+    CONTEXT_LENGTHS="${CONTEXT_LENGTHS:-}" \
+    bash scripts/run_one_group_eval.sh \
+      "${group}" \
+      "${FEATURE_SET}" \
+      "${TRAIN_DAYS}" \
+      "${HORIZON}" \
+      "${CONTEXT_LEN}" \
+      "${TEST_DAYS}" \
+      "${MIN_DAYS}"
+  then
+    :
+  else
+    rc=$?
+    echo "WARNING: group ${group} failed with exit code ${rc}; continuing." >&2
+  fi
 done
 
 if [ "$ANALYZE" = "1" ]; then
-  "${PYTHON_BIN}" -m timesfm_cn_forecast.analyze_group_results --input-dir "${OUTPUT_DIR}"
+  if ! "${PYTHON_BIN}" -m timesfm_cn_forecast.analyze_group_results --input-dir "${OUTPUT_DIR}"; then
+    echo "WARNING: analyze_group_results failed." >&2
+  fi
 fi

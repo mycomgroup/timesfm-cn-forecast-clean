@@ -10,9 +10,8 @@ set -euo pipefail
 # Usage: bash scripts/run_baseline_all_groups.sh
 
 cd "$(dirname "$0")/.."
-
-export PATH=/opt/anaconda3/bin:$PATH
-export PYTHONPATH=src
+source scripts/_env.sh
+setup_project_env
 
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"
 INDEX_DUCKDB="${INDEX_DUCKDB:-data/index_market.duckdb}"
@@ -40,7 +39,7 @@ echo "输出目录: ${OUTPUT_DIR}"
 echo "=========================================================================="
 
 GROUP_LIST=$(
-  INDEX_DUCKDB="${INDEX_DUCKDB}" python - <<'PY'
+  INDEX_DUCKDB="${INDEX_DUCKDB}" "${PYTHON_BIN}" - <<'PY'
 import os
 import sys
 from pathlib import Path
@@ -60,7 +59,7 @@ PY
 
 for group in $GROUP_LIST; do
   echo ">>> 开始评估板块: ${group}"
-  python -m timesfm_cn_forecast.run_group_baseline \
+  "${PYTHON_BIN}" -m timesfm_cn_forecast.run_group_baseline \
     --group "${group}" \
     --market-duckdb "${MARKET_DUCKDB}" \
     --index-duckdb "${INDEX_DUCKDB}" \
