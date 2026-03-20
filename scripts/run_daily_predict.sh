@@ -7,7 +7,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 source scripts/_env.sh
-setup_project_env
+setup_project_env duckdb numpy pandas torch sklearn
 
 GROUP="${1:-}"
 ADAPTER="${2:-}"

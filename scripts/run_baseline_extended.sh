@@ -10,7 +10,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 source scripts/_env.sh
-setup_project_env
+setup_project_env duckdb numpy pandas torch sklearn
 
 # 数据源路径
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"

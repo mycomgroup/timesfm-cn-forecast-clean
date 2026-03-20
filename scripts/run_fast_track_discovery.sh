@@ -9,7 +9,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 source scripts/_env.sh
-setup_project_env
+setup_project_env duckdb numpy pandas torch sklearn
 
 # 1. 挑选非常有代表性、波动性强的三个组
 # 比如：电池（新能源代表），半导体（科技代表），银行（稳定代表）

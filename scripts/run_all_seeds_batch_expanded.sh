@@ -6,7 +6,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 source scripts/_env.sh
-setup_project_env
+setup_project_env duckdb numpy pandas torch sklearn
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BATCH_FILE="/tmp/seed_batch_expanded_${TIMESTAMP}.log"
