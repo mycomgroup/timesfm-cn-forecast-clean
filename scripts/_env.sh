@@ -19,6 +19,11 @@ case ":${PYTHONPATH:-}:" in
   *) export PYTHONPATH="${PROJECT_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}" ;;
 esac
 
+case ":${PYTHONPATH:-}:" in
+  *":${PROJECT_ROOT}/timesfm-master/src:"*) ;;
+  *) export PYTHONPATH="${PROJECT_ROOT}/timesfm-master/src${PYTHONPATH:+:${PYTHONPATH}}" ;;
+esac
+
 _python_has_modules() {
   local candidate="$1"
   shift || true
@@ -37,6 +42,20 @@ PY
 
 setup_project_env() {
   local required_modules=("$@")
+  local need_safetensors=0
+  local mod
+  for mod in "${required_modules[@]}"; do
+    if [ "${mod}" = "safetensors" ]; then
+      need_safetensors=0
+      break
+    fi
+    if [ "${mod}" = "torch" ]; then
+      need_safetensors=1
+    fi
+  done
+  if [ "${need_safetensors}" -eq 1 ]; then
+    required_modules+=("safetensors")
+  fi
   local -a candidates=()
 
   if [ -n "${PYTHON_BIN:-}" ]; then

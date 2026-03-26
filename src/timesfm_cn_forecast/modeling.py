@@ -2,9 +2,10 @@ import os
 import sys
 import torch
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, List, Optional
 
 import numpy as np
+
 
 def _find_project_root() -> Path:
     """寻找当前项目的根目录（即包含 local_timesfm_model 的目录）。"""
@@ -13,46 +14,28 @@ def _find_project_root() -> Path:
             return parent
     return Path(__file__).resolve().parents[2]
 
+
 PROJECT_ROOT = _find_project_root()
+_TIMESFM_SRC = PROJECT_ROOT / "timesfm-master" / "src"
 
-def _find_timesfm_src() -> Path | None:
-    """寻找 timesfm 核心库源码路径。"""
-    env_root = os.environ.get("TIMESFM_REPO")
-    if env_root:
-        repo_root = Path(env_root).expanduser().resolve()
-        return repo_root / "src"
+if not (_TIMESFM_SRC / "timesfm").exists():
+    raise ImportError(f"未找到本地 TimesFM 源码目录: {_TIMESFM_SRC}")
 
-    # 尝试在同级或上级目录寻找原仓库
-    for parent in [PROJECT_ROOT] + list(PROJECT_ROOT.parents):
-        upstream = parent / "timesfm" / "src"
-        if upstream.exists():
-            return upstream
-        # 也尝试在 ~/Documents 下寻找
-        if parent.name == "yuping" or parent.name == os.environ.get("USER"):
-            doc_upstream = parent / "Documents" / "timesfm" / "src"
-            if doc_upstream.exists():
-                return doc_upstream
-        # 如果当前项目本身就在原仓库内（作为技能）
-        if (parent / "src" / "timesfm").exists():
-            return parent / "src"
-    return None
+if str(_TIMESFM_SRC) not in sys.path:
+    sys.path.insert(0, str(_TIMESFM_SRC))
 
-UPSTREAM_SRC = _find_timesfm_src()
-if UPSTREAM_SRC and str(UPSTREAM_SRC) not in sys.path:
-    # 优先尝试导入我们环境中安装好的新版 timesfm
-    try:
-        from timesfm import TimesFM_2p5_200M_torch, ForecastConfig
-    except ImportError:
-        sys.path.insert(0, str(UPSTREAM_SRC))
+_timesfm_import_error: Exception | None = None
 
 try:
     from timesfm import TimesFM_2p5_200M_torch, ForecastConfig
-except ImportError:
+except Exception as exc:
     TimesFM_2p5_200M_torch = None
     ForecastConfig = None
+    _timesfm_import_error = exc
 
 from .finetuning import LinearAdapter, load_adapter
 from .features import FeatureExtractor
+
 
 def 默认模型目录() -> str:
     env_model_path = os.environ.get("TIMESFM_MODEL_PATH")
@@ -60,7 +43,10 @@ def 默认模型目录() -> str:
         return str(Path(env_model_path).expanduser().resolve())
     return str(PROJECT_ROOT / "local_timesfm_model")
 
-def 加载模型(model_dir: str | None) -> TimesFM_2p5_200M_torch:
+
+def 加载模型(model_dir: str | None) -> Any:
+    if TimesFM_2p5_200M_torch is None:
+        raise ImportError("未发现可用 TimesFM 运行时，请确认本地 timesfm-master/src 可用。") from _timesfm_import_error
     实际目录 = model_dir or 默认模型目录()
     model = TimesFM_2p5_200M_torch.from_pretrained(实际目录, torch_compile=False)
     model.compile(
@@ -77,7 +63,7 @@ def 加载模型(model_dir: str | None) -> TimesFM_2p5_200M_torch:
     return model
 
 def 运行预测(
-    model: TimesFM_2p5_200M_torch,
+    model: Any,
     序列: np.ndarray,
     context_length: int,
     horizon: int,
@@ -94,8 +80,8 @@ class AdvancedStockModel:
     2. 线性适配器 (Linear Adapter) 残差修正。
     """
     def __init__(
-        self, 
-        base_model: Optional[TimesFM_2p5_200M_torch] = None, 
+        self,
+        base_model: Optional[Any] = None,
         adapter: Optional[LinearAdapter] = None
     ):
         self.base_model = base_model
@@ -147,7 +133,7 @@ def load_advanced_model(
 ) -> AdvancedStockModel:
     """加载高级模型。"""
     if TimesFM_2p5_200M_torch is None:
-        raise ImportError("未发现 timesfm 库，请确保环境配置正确。")
+        raise ImportError("未发现可用 TimesFM 运行时，请确认本地 timesfm-master/src 可用。") from _timesfm_import_error
 
     base_model = 加载模型(model_dir)
     
