@@ -27,6 +27,11 @@ def _find_timesfm_src() -> Path | None:
         upstream = parent / "timesfm" / "src"
         if upstream.exists():
             return upstream
+        # 也尝试在 ~/Documents 下寻找
+        if parent.name == "yuping" or parent.name == os.environ.get("USER"):
+            doc_upstream = parent / "Documents" / "timesfm" / "src"
+            if doc_upstream.exists():
+                return doc_upstream
         # 如果当前项目本身就在原仓库内（作为技能）
         if (parent / "src" / "timesfm").exists():
             return parent / "src"
@@ -34,7 +39,11 @@ def _find_timesfm_src() -> Path | None:
 
 UPSTREAM_SRC = _find_timesfm_src()
 if UPSTREAM_SRC and str(UPSTREAM_SRC) not in sys.path:
-    sys.path.insert(0, str(UPSTREAM_SRC))
+    # 优先尝试导入我们环境中安装好的新版 timesfm
+    try:
+        from timesfm import TimesFM_2p5_200M_torch, ForecastConfig
+    except ImportError:
+        sys.path.insert(0, str(UPSTREAM_SRC))
 
 try:
     from timesfm import TimesFM_2p5_200M_torch, ForecastConfig

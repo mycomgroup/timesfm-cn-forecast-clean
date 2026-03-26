@@ -21,9 +21,11 @@ setup_project_env duckdb numpy pandas torch sklearn
 MARKET_DUCKDB="${MARKET_DUCKDB:-data/market.duckdb}"
 INDEX_DUCKDB="${INDEX_DUCKDB:-data/index_market.duckdb}"
 
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-TASK_DIR="data/tasks/eval_all_groups_${TIMESTAMP}"
-OUTPUT_DIR="${TASK_DIR}/groups"
+if [ -z "${OUTPUT_DIR:-}" ]; then
+  TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+  TASK_DIR="data/tasks/eval_all_groups_${TIMESTAMP}"
+  OUTPUT_DIR="${TASK_DIR}/groups"
+fi
 
 mkdir -p "${OUTPUT_DIR}"
 
@@ -75,10 +77,13 @@ for i in "${!GROUP_ARRAY[@]}"; do
   group="${GROUP_ARRAY[$i]}"
   IDX=$((i + 1))
   
-  if [ "$SKIP_EXISTING" = "1" ] && [ -f "${OUTPUT_DIR}/${group}/results.csv" ]; then
-    echo "[${IDX}/${TOTAL_GROUPS}] Skipping ${group} (results.csv exists)"
+  if [ "$SKIP_EXISTING" = "1" ] && [ -d "${OUTPUT_DIR}/${group}" ]; then
+    echo "[${IDX}/${TOTAL_GROUPS}] Skipping ${group} (directory exists, possibly running or finished)"
     continue
   fi
+  
+  # 原子性创建目录作为简单锁
+  mkdir -p "${OUTPUT_DIR}/${group}"
   
   echo "[${IDX}/${TOTAL_GROUPS}] Running group: ${group}"
   if MARKET_DUCKDB="${MARKET_DUCKDB}" \
