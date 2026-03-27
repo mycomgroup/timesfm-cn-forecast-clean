@@ -1,0 +1,69 @@
+{
+  "seed": "000596",
+  "generated_at": "2026-03-19 17:13:36",
+  "groups": [
+    {
+      "name": "seed_000596_v1",
+      "seed": "000596",
+      "variant": "balanced",
+      "symbols": [
+        "000596",
+        "600479",
+        "300768",
+        "600529",
+        "601456",
+        "300788",
+        "000589",
+        "301339",
+        "300838"
+      ],
+      "meta": {
+        "seed_only_target": true,
+        "reduced_pool_size": 20,
+        "final_size": 8
+      }
+    },
+    {
+      "name": "seed_000596_v2",
+      "seed": "000596",
+      "variant": "high_corr",
+      "symbols": [
+        "000596",
+        "600529",
+        "000589",
+        "600479",
+        "000625",
+        "601456",
+        "300838",
+        "600526",
+        "300788"
+      ],
+      "meta": {
+        "seed_only_target": true,
+        "reduced_pool_size": 20,
+        "final_size": 8
+      }
+    },
+    {
+      "name": "seed_000596_v3",
+      "seed": "000596",
+      "variant": "stable_vol",
+      "symbols": [
+        "000596",
+        "002845",
+        "300800",
+        "300788",
+        "301339",
+        "300838",
+        "002777",
+        "601456",
+        "002855"
+      ],
+      "meta": {
+        "seed_only_target": true,
+        "reduced_pool_size": 20,
+        "final_size": 8
+      }
+    }
+  ]
+}
