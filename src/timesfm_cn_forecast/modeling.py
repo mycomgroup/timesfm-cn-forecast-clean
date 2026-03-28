@@ -113,19 +113,27 @@ class AdvancedStockModel:
 
         # 3. 应用适配器修正 (仅针对点预测/中位数)
         adjusted_pts = pts.copy()
+        adjusted_qts = qts.copy()
+        expected_dim = len(self.adapter.weights.coef) - 1  # coef 含截距项
         for i, context in enumerate(inputs):
             base_val = pts[i, 0]
             ohlcv_context = ohlcv_inputs[i] if ohlcv_inputs and len(ohlcv_inputs) > i else None
             # 从适配器中读取训练时使用的特征集
             feature_names = self.adapter.weights.feature_names
             features = FeatureExtractor.compute(context, base_val, ohlcv_context=ohlcv_context, feature_names=feature_names)
-            
+
+            if features.shape[0] != expected_dim:
+                raise ValueError(
+                    f"适配器特征维度不匹配: 期望 {expected_dim}, 实际 {features.shape[0]}。"
+                    f" feature_names={feature_names}"
+                )
+
             # 使用适配器修正
             residual = self.adapter.apply(features.reshape(1, -1))[0]
             adjusted_pts[i, 0] += residual
-            qts[i, :, :] += residual
+            adjusted_qts[i, :, :] += residual
 
-        return adjusted_pts, qts
+        return adjusted_pts, adjusted_qts
 
 def load_advanced_model(
     model_dir: Optional[str] = None,
