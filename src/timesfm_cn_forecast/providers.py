@@ -5,11 +5,14 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 from pathlib import Path
 from dataclasses import dataclass
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -34,9 +37,14 @@ class DataRequest:
 
 def normalize_symbol(symbol: str, target: str) -> str:
     """统一的代码归一化入口。target: akshare/tushare/duckdb/db 等。"""
-    s = symbol.lower()
-    # 移除前缀以便计算
-    pure_code = "".join(filter(str.isdigit, s)).zfill(6)
+    s = symbol.strip().lower()
+    # 提取数字部分
+    digits = "".join(filter(str.isdigit, s))
+    if not digits or len(digits) < 5 or len(digits) > 6:
+        raise ValueError(
+            f"无法识别的股票代码 '{symbol}': 提取到数字 '{digits}'，期望5-6位数字"
+        )
+    pure_code = digits.zfill(6)
 
     if target in {"akshare", "duckdb", "db"}:
         if s.startswith(("sh", "sz", "bj")):
@@ -80,6 +88,7 @@ def batch_load_historical_data(
     批量加载多只股票的历史数据，返回宽表格式 (Index=date, Columns=symbol, Values=close)。
     """
     frames = []
+    failed: list[str] = []
     for s in symbols:
         try:
             # 构造临时的请求对象以复用现有逻辑
@@ -109,9 +118,16 @@ def batch_load_historical_data(
                 df = df.rename(columns={"value": s})
                 frames.append(df.set_index("date")[s])
         except Exception as e:
-            print(f"加载股票 {s} 数据失败: {e}")
+            logger.warning("加载股票 %s 数据失败: %s", s, e)
+            failed.append(s)
             continue
-            
+
+    if failed:
+        logger.warning(
+            "批量加载完成: %d/%d 成功, %d 失败 %s",
+            len(frames), len(symbols), len(failed), failed,
+        )
+
     if not frames:
         return pd.DataFrame()
         
